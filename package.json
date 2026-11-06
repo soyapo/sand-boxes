@@ -1,0 +1,14 @@
+{
+  "name": "sand-boxes",
+  "version": "1.0.0",
+  "description": "Sand Boxes: a 2-column gravity puzzle solved and benchmarked with classic state-space search algorithms.",
+  "type": "module",
+  "private": true,
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "test": "node --test tests/",
+    "solve": "node scripts/solve.mjs",
+    "analyze": "node scripts/analyze.mjs"
+  },
+  "engines": { "node": ">=18" }
+}

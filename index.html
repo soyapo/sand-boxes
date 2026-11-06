@@ -1,0 +1,308 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sand Boxes — search algorithms on a gravity puzzle</title>
+  <meta name="description" content="Interactive simulator, solver and benchmark for the Sand Boxes state-space search problem: BFS, DFS, IDS, UCS, Greedy, A*, Weighted A* and IDA* compared on every one of the 59,049 initial states.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231d1a14'/%3E%3Crect x='6' y='6' width='9' height='9' rx='1.5' fill='%23e0b45c'/%3E%3Crect x='17' y='6' width='9' height='9' rx='1.5' fill='%233a352b'/%3E%3Crect x='6' y='17' width='9' height='9' rx='1.5' fill='%233a352b'/%3E%3Crect x='17' y='21.5' width='9' height='4.5' rx='1.5' fill='%23e0b45c'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" class="logo-bg"/>
+        <rect x="6" y="6" width="9" height="9" rx="1.5" class="logo-sand"/>
+        <rect x="17" y="6" width="9" height="9" rx="1.5" class="logo-empty"/>
+        <rect x="6" y="17" width="9" height="9" rx="1.5" class="logo-empty"/>
+        <rect x="17" y="21.5" width="9" height="4.5" rx="1.5" class="logo-sand"/>
+      </svg>
+      <div>
+        <h1>Sand Boxes</h1>
+        <p>State-space search on a two-column gravity puzzle</p>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button role="tab" id="tabbtn-sim" aria-controls="tab-sim" aria-selected="true">Simulator</button>
+      <button role="tab" id="tabbtn-analysis" aria-controls="tab-analysis" aria-selected="false">Analysis</button>
+      <button role="tab" id="tabbtn-rules" aria-controls="tab-rules" aria-selected="false">Rules</button>
+    </nav>
+    <button id="themeToggle" class="icon-btn" title="Switch light / dark theme" aria-label="Switch light / dark theme">◐</button>
+  </header>
+
+  <main>
+    <!-- ============================================================ SIMULATOR -->
+    <section id="tab-sim" role="tabpanel" aria-labelledby="tabbtn-sim">
+      <div class="sim-grid">
+        <!-- setup -->
+        <aside class="card setup">
+          <h2>Setup</h2>
+
+          <div class="field">
+            <span class="label">Problem</span>
+            <div class="segmented" id="variant">
+              <button data-v="sand" class="on">Sand only</button>
+              <button data-v="water">Sand + water</button>
+            </div>
+          </div>
+
+          <div class="field row">
+            <span class="label">Rows</span>
+            <div class="stepper">
+              <button id="rowsMinus" aria-label="Fewer rows">−</button>
+              <output id="rowsOut">5</output>
+              <button id="rowsPlus" aria-label="More rows">+</button>
+            </div>
+            <span class="hint" id="spaceHint"></span>
+          </div>
+
+          <div class="btn-row">
+            <button id="btnRandom" class="btn primary">Random grid</button>
+            <button id="btnClear" class="btn">Clear</button>
+          </div>
+
+          <div class="field">
+            <label class="label" for="preset">Examples</label>
+            <select id="preset"></select>
+          </div>
+
+          <div class="field">
+            <span class="label">Paint boxes <span class="hint">pick, then click a box</span></span>
+            <div class="brushes" id="brushes"></div>
+          </div>
+
+          <div class="field">
+            <label class="label" for="gridText">Grid as text <span class="hint">0 ½ 1 · w W water · # concrete</span></label>
+            <div class="inline">
+              <input id="gridText" type="text" spellcheck="false" autocomplete="off">
+              <button id="btnLoadText" class="btn small">Load</button>
+            </div>
+            <p class="error" id="gridError" hidden></p>
+          </div>
+
+          <details>
+            <summary>Random-fill probabilities</summary>
+            <div class="probs" id="probs"></div>
+            <p class="hint">Assignment values: empty 0.5, full 0.3, half 0.2. Values are normalised.</p>
+          </details>
+
+          <details>
+            <summary>Physics options</summary>
+            <div class="field">
+              <label class="label" for="chain">Door rule</label>
+              <select id="chain"></select>
+              <p class="hint" id="chainHint"></p>
+            </div>
+            <div class="field row" id="penaltyField">
+              <label class="label" for="penalty">Concrete penalty</label>
+              <input id="penalty" type="number" min="0" max="100" step="1" value="10">
+            </div>
+          </details>
+        </aside>
+
+        <!-- board -->
+        <div class="card board-card">
+          <div class="board-head">
+            <div class="tiles">
+              <div class="tile"><span>Cost so far</span><b id="statCost">0</b></div>
+              <div class="tile"><span>Actions</span><b id="statSteps">0</b></div>
+              <div class="tile"><span>Sand left</span><b id="statSand">0</b></div>
+              <div class="tile" id="tileConcrete" hidden><span>Concrete</span><b id="statConcrete">0</b></div>
+            </div>
+            <div class="status" id="status" role="status" aria-live="polite"></div>
+          </div>
+          <div class="board-wrap" id="boardWrap">
+            <canvas id="board" aria-label="Sand box grid. Use the action buttons below as a keyboard alternative."></canvas>
+            <div class="tip" id="boardTip" hidden></div>
+          </div>
+          <div class="player">
+            <button class="icon-btn" id="plFirst" title="Back to the start" aria-label="Back to the start">⏮</button>
+            <button class="icon-btn" id="plPrev" title="Step back" aria-label="Step back">◀</button>
+            <button class="btn primary play" id="plPlay">▶ Play</button>
+            <button class="icon-btn" id="plNext" title="Step forward" aria-label="Step forward">▶</button>
+            <button class="icon-btn" id="plLast" title="Jump to the end" aria-label="Jump to the end">⏭</button>
+            <label class="speed">Speed
+              <select id="speed">
+                <option value="0.5">0.5×</option>
+                <option value="1" selected>1×</option>
+                <option value="2">2×</option>
+                <option value="4">4×</option>
+              </select>
+            </label>
+          </div>
+          <div class="field">
+            <span class="label">Open a gate <span class="hint">or click it on the board — the number is its cost</span></span>
+            <div class="actions" id="actions"></div>
+          </div>
+        </div>
+
+        <!-- solver -->
+        <aside class="card solver">
+          <h2>Solver</h2>
+          <div class="field">
+            <label class="label" for="algo">Algorithm</label>
+            <select id="algo"></select>
+            <p class="hint" id="algoHint"></p>
+          </div>
+          <div class="field">
+            <label class="label" for="heur">Heuristic</label>
+            <select id="heur"></select>
+            <p class="hint" id="heurHint"></p>
+          </div>
+          <div class="btn-row">
+            <button id="btnSolve" class="btn primary">Solve</button>
+            <button id="btnCompare" class="btn">Compare all</button>
+          </div>
+          <div id="solveResult" class="result" hidden></div>
+
+          <h3>Timeline <span class="hint" id="timelineHint"></span></h3>
+          <ol class="timeline" id="timeline"></ol>
+        </aside>
+      </div>
+
+      <div class="card" id="compareCard" hidden>
+        <h2>All algorithms on this grid</h2>
+        <p class="sub">Click a row to load that solution into the player.</p>
+        <div class="table-wrap"><table class="data" id="compareTable"></table></div>
+      </div>
+    </section>
+
+    <!-- ============================================================= ANALYSIS -->
+    <section id="tab-analysis" role="tabpanel" aria-labelledby="tabbtn-analysis" hidden>
+      <div class="card">
+        <div class="filter-row">
+          <div class="field">
+            <label class="label" for="dataset">Dataset</label>
+            <select id="dataset"></select>
+          </div>
+          <div class="field grow">
+            <p class="sub" id="datasetMeta"></p>
+          </div>
+          <a class="btn small" id="datasetDownload" download>Download JSON</a>
+        </div>
+        <details id="liveRun">
+          <summary>Run a new analysis in this browser</summary>
+          <div class="live-grid">
+            <div class="field">
+              <label class="label" for="liveKind">What to run</label>
+              <select id="liveKind">
+                <option value="exhaustive">Every sand-only state</option>
+                <option value="random">Random instances (sand)</option>
+                <option value="water">Random instances (sand + water)</option>
+              </select>
+            </div>
+            <div class="field">
+              <label class="label" for="liveRows">Rows</label>
+              <select id="liveRows"></select>
+            </div>
+            <div class="field">
+              <label class="label" for="liveCount">Instances</label>
+              <select id="liveCount"></select>
+            </div>
+            <div class="field">
+              <label class="label" for="liveChain">Door rule</label>
+              <select id="liveChain"></select>
+            </div>
+            <div class="field">
+              <label class="label" for="liveSeed">Seed</label>
+              <input id="liveSeed" type="number" value="1" min="1" step="1">
+            </div>
+            <div class="field end">
+              <button class="btn primary" id="liveStart">Run</button>
+              <button class="btn" id="liveStop" hidden>Stop</button>
+            </div>
+          </div>
+          <div class="progress" id="liveProgress" hidden><div></div><span></span></div>
+          <p class="hint">Runs in background workers on your machine. All 59,049 five-row states take several minutes; a sample of 2,000 finishes in well under a minute.</p>
+        </details>
+      </div>
+
+      <div id="analysisBody"></div>
+    </section>
+
+    <!-- ================================================================ RULES -->
+    <section id="tab-rules" role="tabpanel" aria-labelledby="tabbtn-rules" hidden>
+      <div class="prose-grid">
+        <article class="card prose">
+          <h2>The problem</h2>
+          <p>A tower of boxes, <b>n rows by 2 columns</b>. Each box is empty, half full or full of sand. Neighbouring boxes are separated by spring-loaded gates: one <b>top-down gate</b> under every box (the gates under the bottom row are outlets to the outside) and one <b>side gate</b> between the two boxes of every row. A gate stays shut until you open it; it closes again as soon as the sand has settled.</p>
+          <p><b>Goal:</b> reach a state in which no box contains sand, paying as little as possible.</p>
+
+          <h3>Initial state</h3>
+          <p>Every box is drawn independently: empty with probability 0.5, full with 0.3, half full with 0.2. A 5×2 grid therefore has 3<sup>10</sup> = 59,049 possible initial states.</p>
+
+          <h3>Action a — top-down gate</h3>
+          <ul>
+            <li>Sand falls from the upper box into the lower one until the lower box is full or the upper box is empty. Through an outlet, the whole box drains.</li>
+            <li><b>Doors pressed from both sides:</b> a spring door opens by itself only when material presses on it from both sides, that is, the box above it holds sand and the box below it is <em>full</em> (touching the door from underneath). So when you open the gate under a full box, the door on top of that box opens too; the door above the next box opens as well if that box was also full, and so on up the pile. A half-full box does not touch the door above it, so nothing above it follows.</li>
+            <li>All these doors are open at the same moment and all the sand falls together.</li>
+            <li>Cost = <b>1 + 4·(s + s′)</b>, where s is the level of the upper box before the action and s′ its level after everything has fallen (0, ½ or 1).</li>
+          </ul>
+
+          <h3>Action b — side gate</h3>
+          <ul>
+            <li>Sand levels out only when one box is full and the other is empty: both end up half full. Any other pair would need a level that is not 0, ½ or 1, so nothing moves.</li>
+            <li>Cost = <b>1</b>.</li>
+          </ul>
+          <p class="note">Gates that would move nothing are not offered as actions.</p>
+
+          <h3>Why the cost function is interesting</h3>
+          <p>Flushing a full box while more sand rests on it costs 9 instead of 5, because the box is full again afterwards (s′ = 1). Half boxes are cheap to move (3) and cheap to flush, and a side gate turns one full box into two halves for just 1 — but halves break the chain of pressed doors, so a pile with a half box in the middle no longer drops in one go. The cheapest plan balances the two.</p>
+        </article>
+
+        <article class="card prose">
+          <h2>The example from the assignment</h2>
+          <pre class="gridtext">1 0
+0 1
+0 1
+1 0</pre>
+          <table class="data compact">
+            <thead><tr><th>Plan</th><th>Actions</th><th class="num">Cost</th><th></th></tr></thead>
+            <tbody>
+              <tr><td>Straight down (greedy)</td><td>Left 5+5+9+5, right 9+9+5</td><td class="num">47</td><td><button class="btn small" data-load="1 0/0 1/0 1/1 0" data-plan="L1 L2 L4 L4 R3 R4 R4">Replay</button></td></tr>
+              <tr><td>Side gates on rows 2 and 3</td><td>1+1, then 7+9+9+9+5 and 3+5+5</td><td class="num">54</td><td><button class="btn small" data-load="1 0/0 1/0 1/1 0" data-plan="S2 S3 L1 L2 L4 L4 L4 R2 R3 R4">Replay</button></td></tr>
+              <tr><td>Same, merging the halves first</td><td>1+1, then 3+5+9+9+5 and 3+5+5</td><td class="num">46</td><td><button class="btn small" data-load="1 0/0 1/0 1/1 0" data-plan="S2 S3 L2 L1 L4 L4 L4 R2 R3 R4">Replay</button></td></tr>
+              <tr class="hl"><td>Optimal (found by UCS / A*)</td><td>1, then 3+3+7+3 and 9+9+7+3</td><td class="num">45</td><td><button class="btn small" data-load="1 0/0 1/0 1/1 0" data-algo="astar">Replay</button></td></tr>
+            </tbody>
+          </table>
+          <p>The assignment lists the second plan as 1+1, 7+9+9+5, 3+5+5 = 45. One 9 is missing there: after the action that costs 7 the left column is ½, 1, ½, 1. The half box in the third row does not press on the door above it, so the pile cannot drop in one go; it first has to be packed with one more action (cost 9) into 0, 1, 1, 1, and only then come the three flushes 9+9+5. That makes 54.</p>
+          <p>The true optimum is nevertheless 45, by a different plan: open the side gate of the <em>top</em> row. The two half boxes it creates are cheap to bring down, and the final flushes of both columns then cost 7 and 3 instead of 9 and 5.</p>
+
+          <h2>Proposed extension: water and concrete</h2>
+          <p>Boxes may also start with water (half or full). Water obeys the same gate rules as sand, with one addition:</p>
+          <ul>
+            <li>Whenever sand flows into a box holding water, or water into a box holding sand, the two set into <b>concrete</b>. The box is blocked for good: nothing enters, leaves or passes through it.</li>
+            <li>Through a top-down gate this happens when the lower box has room. Through a side gate it happens when a full box faces a half-full box of the other material: half a box spills over and sets.</li>
+            <li>Every box that turns to concrete adds <b>10</b> to the cost. The search does not stop there.</li>
+            <li>The goal is unchanged: <em>no box contains sand</em>. Water and concrete may remain, so pouring water on trapped sand is a legitimate, if expensive, way to get rid of it.</li>
+          </ul>
+          <p>Some grids become unsolvable (sand stuck above concrete with no water left to reach it); the solver reports those.</p>
+          <div class="btn-row">
+            <button class="btn" data-load="0 W/½ 0/# 0" data-algo="astar">Trapped sand example</button>
+            <button class="btn" data-load="W 1/1 ½/0 w/½ 0/1 0" data-algo="astar">Mixed 5×2 example</button>
+          </div>
+        </article>
+
+        <article class="card prose wide">
+          <h2>Algorithms and heuristics</h2>
+          <div class="table-wrap">
+            <table class="data compact" id="algoTable"></table>
+          </div>
+          <div class="table-wrap">
+            <table class="data compact" id="heurTable"></table>
+          </div>
+          <p class="note">Memory is counted in states held at once (frontier plus explored set or transposition table). The iterative-deepening variants keep a per-iteration transposition table: without one, the freedom to interleave independent moves in the two columns makes their search trees explode.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>Sand Boxes — course project, Artificial Intelligence.</span>
+    <span>Source, problem statements and the full report are in the repository (<code>docs/</code>).</span>
+  </footer>
+
+  <script type="module" src="js/ui/app.js"></script>
+</body>
+</html>
