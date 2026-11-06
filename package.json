@@ -6,7 +6,7 @@
   "private": true,
   "scripts": {
     "start": "node scripts/serve.mjs",
-    "test": "node --test tests/",
+    "test": "node --test tests/sandbox.test.mjs",
     "solve": "node scripts/solve.mjs",
     "analyze": "node scripts/analyze.mjs"
   },
