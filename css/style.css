@@ -332,6 +332,7 @@ table.data + table.data, .table-wrap + .table-wrap { margin-top: 14px; }
 /* -------------------------------------------------------------- analysis */
 .filter-row { display: flex; gap: 14px 18px; align-items: end; flex-wrap: wrap; margin-bottom: 10px; }
 .filter-row .field { margin-bottom: 0; }
+.filter-row .field.grow { flex: 1 1 340px; }
 .live-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 10px 14px; }
 .progress { position: relative; height: 22px; background: var(--surface-2); border-radius: 999px; overflow: hidden; margin: 10px 0; }
 .progress div { position: absolute; inset: 0 auto 0 0; width: 0; background: var(--accent); opacity: 0.35; transition: width 0.2s; }
