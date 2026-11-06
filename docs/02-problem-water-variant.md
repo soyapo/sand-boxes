@@ -90,10 +90,10 @@ instance has no solution — every algorithm reports that after exhausting the r
 
 **Mixed 5×2.** For `W 1 / 1 ½ / 0 w / ½ 0 / 1 0` the optimal plan costs 71 (17 actions, 4 side
 gates) and makes concrete **exactly once, on purpose**: its last action drops the remaining half box
-of sand onto water (3 + 10) because that is cheaper than carrying it out. Greedy best-first search
-pours sand onto the water in its very first action, ends up with three concrete boxes and pays 75;
-BFS finds a shortest plan (9 actions) that also costs 75. All of them can be replayed from the
-*Rules* tab or with
+of sand onto water (3 + 10) because that is cheaper than carrying it out. The greedy approach of
+the assignment cannot solve this instance at all: flushing straight down it lets sand and water
+meet, the column is sealed with concrete and the sand above it is stuck. Greedy best-first search
+and BFS both find plans of cost 75. All of them can be replayed from the *Rules* tab or with
 
 ```bash
 node scripts/solve.mjs "W 1 / 1 ½ / 0 w / ½ 0 / 1 0" --all
@@ -104,10 +104,13 @@ node scripts/solve.mjs "W 1 / 1 ½ / 0 w / ½ 0 / 1 0" --all
 - **Solvability is no longer guaranteed.** The state graph is still finite and acyclic (material
   only moves down, levels out or sets), so every algorithm terminates and reports failure when the
   reachable states are exhausted.
+- **The greedy approach is no longer safe.** On sand-only grids the straight-down sweep always
+  finishes. With water it can seal a column with concrete and get stuck: on the 1,000 random
+  instances of the report it fails on 302, although all of them are solvable.
 - **Heuristics.** h₁ (sand volume) stays admissible as long as the concrete penalty is at least 5:
   a concrete box absorbs at most one unit of sand for at least 10, which is never cheaper than the
   `4T + ⌈T⌉` charged for flushing. For smaller penalties the implementation falls back to
-  `T · min(5, penalty)`. The gap term of h₂ is no longer valid (sand above an empty box may be
-  concreted in place), so h₂ reduces to h₁ whenever water or concrete is present.
+  `T · min(5, penalty)`. The gate term of h₂ is no longer valid (sand above a box may be concreted
+  in place), so h₂ reduces to h₁ whenever water or concrete is present.
 - **The state space cannot be enumerated** (6¹⁰ ≈ 60 million for 5×2), so this variant is evaluated
   on 1,000 random instances instead; see the report.

@@ -351,7 +351,7 @@ export class Board {
   }
 
   #gate(id, open, dir) {
-    const { ctx, colors, geo } = this;
+    const { ctx, colors } = this;
     const g = this.gateRects[id];
     const enabled = this.available.has(id);
     const hot = !this.busy && enabled && (this.hover === id || this.highlight === id);
@@ -388,7 +388,6 @@ export class Board {
       ctx.fill();
       ctx.globalAlpha = 1;
     }
-    void geo;
   }
 
   #particles(flowItem, overlay, now) {

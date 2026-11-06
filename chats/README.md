@@ -1,7 +1,9 @@
 # Chat transcripts
 
 The assignment asks for the full text of every chat with the AI model (prompts and responses).
-This project was built in a single Claude Code session; this folder holds its export.
+This project was built in a single Claude Code session; this folder holds its export, taken on
+6 November 2026 just before the first deployment. Work done after that point (the greedy approach
+as defined in class, RBFS, the step explanations) is not in this export yet.
 
 | File | Contents |
 |---|---|

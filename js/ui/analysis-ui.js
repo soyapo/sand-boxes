@@ -16,7 +16,7 @@ const int = (n) => Math.round(n).toLocaleString('en-US');
 const pct = (x) => `${(100 * x).toFixed(x > 0.9995 || x < 0.0005 ? 0 : 1)}%`;
 
 /** Fixed colour per algorithm (colour follows the entity, never its rank). */
-const SERIES = { bfs: 1, ucs: 2, 'astar-gap': 3, idastar: 4, greedy: 5, dfs: 6, ids: 7, wastar: 8 };
+const SERIES = { bfs: 1, ucs: 2, 'astar-gap': 3, idastar: 4, rbfs: 5, dfs: 6, ids: 7, wastar: 8 };
 const DEFAULT_LINES = ['bfs', 'ucs', 'astar-gap', 'idastar'];
 
 const datasets = new Map(); // id -> { title, url?, data? }
@@ -107,10 +107,14 @@ function render(data) {
   const tiles = [
     ['Instances', int(meta.count), meta.unsolvable ? `${int(meta.unsolvable)} unsolvable` : 'all solvable'],
     ['Mean optimal cost', fmt(optimal.cost.mean), `median ${fmt(optimal.cost.median)}, max ${fmt(optimal.cost.max)}`],
-    ['Greedy is optimal on', pct(greedy.optimal / Math.max(1, meta.solvable)), `${int(greedy.optimal)} of ${int(meta.solvable)} instances`],
-    ['Mean greedy ÷ optimal', greedy.ratio.mean.toFixed(3), `worst case ${greedy.ratio.max.toFixed(2)}`],
+    ['Greedy approach is optimal on', pct(greedy.optimal / Math.max(1, meta.solvable)), `${int(greedy.optimal)} of ${int(meta.solvable)} instances`],
+    ['Mean greedy ÷ optimum cost', greedy.ratio.mean.toFixed(3), `worst case ${greedy.ratio.max.toFixed(2)}`],
     ['Optimal plans using side gates', pct(sideShare), `mean length ${fmt(optimal.steps.mean)} actions`],
   ];
+  if (data.unitCost && data.unitCost.compared) {
+    const uc = data.unitCost;
+    tiles.push(['Greedy with 1 unit per gate', pct(uc.greedyOptimal / uc.compared), `fewest actions on ${int(uc.greedyOptimal)} of ${int(uc.compared)}`]);
+  }
   body.append(el('div', { className: 'stat-row' }, tiles.map(([k, v, s]) => el('div', { className: 'stat' }, [el('span', { textContent: k }), el('b', { textContent: v }), el('small', { textContent: s })]))));
 
   // ---- solution quality
@@ -120,7 +124,8 @@ function render(data) {
   const a = byKey[view.algo];
   const name = a.label;
 
-  const hist = chartCard(`${name}_opt_ratio = cost by ${name.toLowerCase()} ÷ optimum cost`, 'How far the solution is from the cheapest one, counted over all instances with sand.', { controls: [algoPick()] });
+  const isGreedy = a.key === 'greedy';
+  const hist = chartCard(isGreedy ? 'Greedy_opt_ratio = cost by greedy solution ÷ optimum cost' : `Cost by ${name} ÷ optimum cost`, 'How far the solution is from the cheapest one, counted over all instances with sand.', { controls: [algoPick()] });
   grid.append(hist.card);
   const bars = [{ label: '1', value: a.ratio.exact, accent: true, tip: `Ratio exactly 1 (optimal): <b>${int(a.ratio.exact)}</b> instances` }];
   a.ratio.bins.forEach((count, i) => {
@@ -143,11 +148,11 @@ function render(data) {
   };
   const gridText = (key) => formatGrid(model.decode(key), ' / ');
 
-  const sc1 = chartCard(`Cost by ${name.toLowerCase()} against the optimum`, 'Each circle is a (cost, optimum) pair; its area is the number of instances there. Click one to open an example.', { controls: [algoPick()] });
+  const sc1 = chartCard(isGreedy ? 'Cost by greedy solution against the optimum' : `Cost by ${name} against the optimum`, 'Each circle is a (cost, optimum) pair; its area is the number of instances there. Click one to open an example.', { controls: [algoPick()] });
   grid.append(sc1.card);
   bubbles(sc1.chart, {
     points: a.costVsOpt,
-    xTitle: `cost by ${name.toLowerCase()} solution`,
+    xTitle: isGreedy ? 'cost by greedy solution' : `cost by ${name} solution`,
     yTitle: 'optimum cost',
     diagonal: true,
     diagonalLabel: 'cost = optimum',
@@ -172,6 +177,7 @@ function render(data) {
   });
   sc2.foot.textContent = view.actionsBy === 'optimal'
     ? 'Among equally cheap plans the one with the fewest actions is counted, then the one with the fewest side gates.'
+    : view.actionsBy === 'greedy' ? 'Plans of the greedy approach: it never opens a side gate, so every point lies on the horizontal axis.'
     : `Solutions returned by ${byKey[view.actionsBy].label}.`;
 
   const dist = chartCard('Distribution of the optimum cost', 'How expensive the cheapest plan is across the instances.');
@@ -234,7 +240,7 @@ function render(data) {
   ]);
   perf.card.append(el('div', { className: 'table-wrap', style: 'margin-top:14px' }, perfTable));
   const aborted = algos.filter((x) => x.aborted).map((x) => `${x.label} hit the expansion limit on ${int(x.aborted)} instance${x.aborted === 1 ? '' : 's'}`);
-  perf.foot.textContent = `Memory counts states held at once (frontier plus explored set or transposition table). ${meta.optimalityMismatches === 0 ? 'Every exact algorithm (UCS, A*, IDA*) returned the same optimum on every instance.' : `${meta.optimalityMismatches} optimality mismatches!`} ${aborted.join('; ')}${aborted.length ? '.' : ''}`;
+  perf.foot.textContent = `Memory counts states held at once (frontier plus explored set or transposition table). ${meta.optimalityMismatches === 0 ? 'Every exact algorithm (UCS, A*, IDA*, and RBFS wherever it finished) returned the same optimum on every instance.' : `${meta.optimalityMismatches} optimality mismatches!`} ${aborted.join('; ')}${aborted.length ? '.' : ''}`;
 
   // ---- scaling with solution length
   const depthMetrics = { expanded: 'States expanded', memory: 'Peak memory (states)', timeMs: 'Time (ms)' };
@@ -262,7 +268,7 @@ function render(data) {
     yTitle: `${depthMetrics[view.depthMetric]} — mean`,
     tipTitle: (xv) => `Optimal plan of <b>${xv}</b> actions`,
   });
-  scale.foot.textContent = 'Toggle algorithms with the buttons above the chart. A* (h₁) is listed in the table above.';
+  scale.foot.textContent = 'Toggle algorithms with the buttons above the chart. The greedy approach, greedy best-first and A* (h₁) are listed in the table above.';
 }
 
 // ---------------------------------------------------------------- live run

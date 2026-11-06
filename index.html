@@ -79,6 +79,7 @@
               <button id="btnLoadText" class="btn small">Load</button>
             </div>
             <p class="error" id="gridError" hidden></p>
+            <button id="btnCopyLink" class="btn small" type="button">Copy link to this grid</button>
           </div>
 
           <details>
@@ -112,6 +113,7 @@
             </div>
             <div class="status" id="status" role="status" aria-live="polite"></div>
           </div>
+          <p class="step-note" id="stepNote" aria-live="polite"></p>
           <div class="board-wrap" id="boardWrap">
             <canvas id="board" aria-label="Sand box grid. Use the action buttons below as a keyboard alternative."></canvas>
             <div class="tip" id="boardTip" hidden></div>
@@ -122,6 +124,7 @@
             <button class="btn primary play" id="plPlay">▶ Play</button>
             <button class="icon-btn" id="plNext" title="Step forward" aria-label="Step forward">▶</button>
             <button class="icon-btn" id="plLast" title="Jump to the end" aria-label="Jump to the end">⏭</button>
+            <span class="keys" title="Keyboard: Space plays or pauses, the arrow keys step, Home and End jump">Space · ← →</span>
             <label class="speed">Speed
               <select id="speed">
                 <option value="0.5">0.5×</option>
@@ -247,6 +250,15 @@
           </ul>
           <p class="note">Gates that would move nothing are not offered as actions.</p>
 
+          <h3>The greedy approach</h3>
+          <p>“Greedy” in this assignment is <em>not</em> greedy best-first search (that one needs a heuristic). It is the simple procedure proposed in class:</p>
+          <ul>
+            <li>never open a side gate; empty the two columns independently;</li>
+            <li>in a column, go to the topmost box that holds sand and open the gate under it; whether the sand moved down or stayed stuck, move on to the box below and do the same, down to the outlet;</li>
+            <li>repeat until the column is empty.</li>
+          </ul>
+          <p>With a cost of one unit per gate this procedure uses the fewest possible actions. With the cost function above it usually does not give the cheapest plan — which is exactly what the histogram of <code>Greedy_opt_ratio</code> in the Analysis tab measures.</p>
+
           <h3>Why the cost function is interesting</h3>
           <p>Flushing a full box while more sand rests on it costs 9 instead of 5, because the box is full again afterwards (s′ = 1). Half boxes are cheap to move (3) and cheap to flush, and a side gate turns one full box into two halves for just 1 — but halves break the chain of pressed doors, so a pile with a half box in the middle no longer drops in one go. The cheapest plan balances the two.</p>
         </article>
@@ -260,7 +272,7 @@
           <table class="data compact">
             <thead><tr><th>Plan</th><th>Actions</th><th class="num">Cost</th><th></th></tr></thead>
             <tbody>
-              <tr><td>Straight down (greedy)</td><td>Left 5+5+9+5, right 9+9+5</td><td class="num">47</td><td><button class="btn small" data-load="1 0/0 1/0 1/1 0" data-plan="L1 L2 L4 L4 R3 R4 R4">Replay</button></td></tr>
+              <tr><td>Greedy approach</td><td>Left 5+5+9+5, right 9+9+5</td><td class="num">47</td><td><button class="btn small" data-load="1 0/0 1/0 1/1 0" data-algo="sweep">Replay</button></td></tr>
               <tr><td>Side gates on rows 2 and 3</td><td>1+1, then 7+9+9+9+5 and 3+5+5</td><td class="num">54</td><td><button class="btn small" data-load="1 0/0 1/0 1/1 0" data-plan="S2 S3 L1 L2 L4 L4 L4 R2 R3 R4">Replay</button></td></tr>
               <tr><td>Same, merging the halves first</td><td>1+1, then 3+5+9+9+5 and 3+5+5</td><td class="num">46</td><td><button class="btn small" data-load="1 0/0 1/0 1/1 0" data-plan="S2 S3 L2 L1 L4 L4 L4 R2 R3 R4">Replay</button></td></tr>
               <tr class="hl"><td>Optimal (found by UCS / A*)</td><td>1, then 3+3+7+3 and 9+9+7+3</td><td class="num">45</td><td><button class="btn small" data-load="1 0/0 1/0 1/1 0" data-algo="astar">Replay</button></td></tr>
@@ -286,6 +298,7 @@
 
         <article class="card prose wide">
           <h2>Algorithms and heuristics</h2>
+          <p>The greedy approach and the four main searches (BFS, DFS, IDS, UCS) are the required part; the informed searches (A*, RBFS and the others) are the bonus part and need a heuristic designed for this problem.</p>
           <div class="table-wrap">
             <table class="data compact" id="algoTable"></table>
           </div>

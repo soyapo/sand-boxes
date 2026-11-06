@@ -97,7 +97,7 @@ action is not applicable. Cost 1. A side gate never makes the doors above open.
 
 | Plan | Costs as printed in the assignment | Printed total | Actual cost |
 |---|---|---|---|
-| Greedy (straight down) | left 5+5+9+5 = 24, right 9+9+5 = 23 | 47 | **47** |
+| Greedy approach (section 4.1) | left 5+5+9+5 = 24, right 9+9+5 = 23 | 47 | **47** |
 | Side gates (“might be optimum”) | 1+1 = 2, then 7+9+9+5 = 30 and 3+5+5 = 13 | 45 | **54** |
 | Other alternative | 1+1 = 2, then 3+5+9+9+5 = 31 and 3+5+5 = 13 | 46 | **46** |
 
@@ -140,22 +140,60 @@ rides down for free with the full boxes under it, and the last two flushes of ea
 All four plans can be replayed from the *Rules* tab of the site; the test-suite checks each cost
 sequence, and checks the 54-plan state by state on the 5×2 grid (with an empty top row).
 
-## 4. Search algorithms
+## 4. Algorithms
 
-| Algorithm | Frontier | Optimal cost? | Remarks |
+### 4.1 The greedy approach (required)
+
+“Greedy” in this assignment does **not** mean greedy best-first search from the informed-search
+chapter; that algorithm needs a heuristic. It is the procedure proposed in class, which looks
+reasonable and, with an ordinary cost of one unit per opened gate, gives the optimum:
+
+1. Never open a side gate. Treat the two columns separately and independently.
+2. In a column, go to the **topmost box that contains sand** and open the gate under it. The sand
+   either moves down or stays stuck where it is (the box below is full). Either way, move on to the
+   box below and do the same, down to the outlet.
+3. Repeat such top-to-bottom sweeps until the column is empty.
+
+A gate that would move nothing is not an action in this model, so a stuck box is simply skipped and
+costs nothing. On the worked example the procedure produces exactly the sequence quoted in the
+assignment, in the same order: left column 5, 5, 9, 5, then right column 9, 9, 5, total 47.
+
+The procedure is not a search: it follows one fixed path, expands as many states as it takes
+actions, and holds a single state in memory. Its cost is the **“cost by greedy solution”** used in
+`Greedy_opt_ratio` and in the first scatter plot.
+
+Two facts about it, both checked on every state (see the report):
+
+- with **one unit per gate** it always uses the fewest possible actions, so it is optimal for that
+  cost function, as was said in class;
+- with the cost function `1 + 4·(s + s′)` it is optimal on only a small share of the states.
+
+### 4.2 The four main searches (required)
+
+| Algorithm | Order of expansion | Optimal cost? | Remarks |
 |---|---|---|---|
 | BFS | FIFO | no (fewest actions) | graph search, goal test on generation |
 | DFS | LIFO | no | graph search, first solution found |
 | IDS | depth-limited DFS, limit 0, 1, 2… | no (fewest actions) | per-iteration transposition table |
-| UCS | priority g | **yes** | Dijkstra |
-| Greedy best-first | priority h | no | uses the fall-distance heuristic h₃ |
-| A* | priority g + h | **yes** (admissible h) | reopens states on a cheaper path |
-| Weighted A* | priority g + 2h | no (≤ 2 × optimum) | |
-| IDA* | DFS inside f-contours | **yes** (admissible h) | per-iteration transposition table |
+| UCS | lowest g | **yes** | Dijkstra |
 
-IDS and IDA* are normally run as pure tree searches. Here the two columns are largely independent,
-so any plan can be interleaved in a combinatorial number of ways and a tree search re-explores the
-same states endlessly. Both therefore keep a transposition table that lives for one iteration.
+### 4.3 Informed searches (bonus)
+
+| Algorithm | Order of expansion | Optimal cost? | Remarks |
+|---|---|---|---|
+| A* | lowest g + h | **yes** (admissible h) | reopens states on a cheaper path |
+| RBFS | best f first, f-values backed up | **yes** (admissible h) | pure tree search, memory linear in the depth |
+| IDA* | DFS inside growing f-contours | **yes** (admissible h) | per-iteration transposition table |
+| Weighted A* | lowest g + 2h | no (≤ 2 × optimum) | |
+| Greedy best-first | lowest h | no | the textbook “greedy”, guided by h₃; kept for comparison only |
+
+**Transpositions.** The two columns are largely independent, so the actions of any plan can be
+interleaved in a combinatorial number of ways, all leading through the same states. A pure tree
+search re-explores them again and again. IDS and IDA* therefore keep a transposition table that
+lives for one iteration. RBFS is left as the textbook algorithm, with no table, precisely to show
+the effect: on the 4×2 example above A* expands about 1,000 states and RBFS about 1,000,000, while
+holding fewer than 100 states in memory. In the benchmark RBFS gets a budget of 500,000 expansions
+per instance.
 
 ## 5. Heuristics
 
@@ -178,8 +216,8 @@ not an outlet and belongs to E alone, so the 3s add up with each other and with 
 **h₃ — fall distance.** `h₃ = 5 · Σ (units of sand × gates still below it)`.
 The cost of carrying every unit down alone. Pressed doors let a whole stack drop for one action, so
 h₃ overestimates: it is **not admissible**. It never rewards a side gate, which makes greedy
-best-first search behave like the “flush everything straight down” strategy; on the example above
-it returns exactly the 47 of the assignment.
+best-first search behave much like the greedy approach of section 4.1; on the example above
+it also returns 47.
 
 Both admissibility and consistency of h₁ and h₂ are verified by the test-suite on *every* state and
 transition of the 1×2 … 5×2 grids. On the 5×2 grid the mean ratio h/h* is 0.41 for h₁ and 0.64

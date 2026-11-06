@@ -2,7 +2,8 @@
 // Solve one grid from the command line.
 //
 //   node scripts/solve.mjs "1 0 / 0 1 / 0 1 / 1 0"                 A* with the gap heuristic
-//   node scripts/solve.mjs "1 0 / 0 1 / 0 1 / 1 0" --algo greedy --h fall
+//   node scripts/solve.mjs "1 0 / 0 1 / 0 1 / 1 0" --algo sweep              the greedy approach of the assignment
+//   node scripts/solve.mjs "1 0 / 0 1 / 0 1 / 1 0" --algo gbfs --h fall
 //   node scripts/solve.mjs "0 W / ½ 0 / # 0" --all                 compare every algorithm
 //   node scripts/solve.mjs --random --rows 5 --seed 3 [--water]
 //
@@ -50,7 +51,7 @@ if (opt.all) {
   console.table(rows);
 } else {
   const algo = opt.algo || 'astar';
-  const h = opt.h || (algo === 'greedy' ? 'fall' : 'gap');
+  const h = opt.h || (algo === 'gbfs' ? 'fall' : 'gap');
   if (!ALGORITHMS[algo]) throw new Error(`unknown algorithm "${algo}" (one of ${Object.keys(ALGORITHMS).join(', ')})`);
   if (!HEURISTICS[h]) throw new Error(`unknown heuristic "${h}" (one of ${Object.keys(HEURISTICS).join(', ')})`);
   const r = search(algo, makeProblem(model, cells, h));

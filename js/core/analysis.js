@@ -4,19 +4,28 @@
 import { Sandbox, PROBS_SAND, PROBS_WATER, seededRng } from './model.js';
 import { HEURISTICS } from './heuristics.js';
 import { ALGORITHMS, search } from './search.js';
-import { makeProblem, describePath } from './problem.js';
+import { makeProblem } from './problem.js';
 
-/** Algorithm + heuristic combinations that are compared. */
+/** Expansion budget of RBFS per instance (it has no transposition table by design). */
+export const RBFS_BUDGET = 500_000;
+
+/**
+ * What is compared. "greedy" is the greedy approach of the assignment (a fixed straight-down
+ * sweep), followed by the four main searches and then the informed ones.
+ * RBFS is a pure tree search, so it gets its own, smaller expansion budget.
+ */
 export const VARIANTS = Object.freeze([
+  { key: 'greedy', algo: 'sweep', h: null, label: 'Greedy approach' },
   { key: 'bfs', algo: 'bfs', h: null, label: 'BFS' },
   { key: 'dfs', algo: 'dfs', h: null, label: 'DFS' },
   { key: 'ids', algo: 'ids', h: null, label: 'IDS' },
   { key: 'ucs', algo: 'ucs', h: null, label: 'UCS' },
-  { key: 'greedy', algo: 'greedy', h: 'fall', label: 'Greedy' },
   { key: 'astar-volume', algo: 'astar', h: 'volume', label: 'A* (h₁)' },
   { key: 'astar-gap', algo: 'astar', h: 'gap', label: 'A* (h₂)' },
-  { key: 'wastar', algo: 'wastar', h: 'gap', label: 'Weighted A*' },
+  { key: 'rbfs', algo: 'rbfs', h: 'gap', label: 'RBFS', maxExpanded: RBFS_BUDGET },
   { key: 'idastar', algo: 'idastar', h: 'gap', label: 'IDA*' },
+  { key: 'wastar', algo: 'wastar', h: 'gap', label: 'Weighted A*' },
+  { key: 'gbfs', algo: 'gbfs', h: 'fall', label: 'Greedy best-first' },
 ]);
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
@@ -158,6 +167,11 @@ class Collector {
     this.optSteps = [];
     this.optActions = new PointCloud();
     this.optCostHist = new Map();
+    // "With one unit per gate the greedy approach is optimal": BFS gives the fewest actions, so
+    // comparing the two lengths on every instance checks that claim.
+    this.greedyIndex = variants.findIndex((v) => v.key === 'greedy');
+    this.bfsIndex = variants.findIndex((v) => v.key === 'bfs');
+    this.unit = { compared: 0, greedyOptimal: 0, points: new PointCloud() };
   }
 
   /** @param {{key:number, opt:number, steps:number, sides:number, runs:Array}} rec  opt = Infinity when unsolvable */
@@ -171,6 +185,13 @@ class Collector {
       this.optSteps.push(rec.steps);
       this.optActions.add(rec.steps, rec.sides, rec.key);
       this.optCostHist.set(rec.opt, (this.optCostHist.get(rec.opt) || 0) + 1);
+    }
+    const gr = rec.runs[this.greedyIndex];
+    const bf = rec.runs[this.bfsIndex];
+    if (gr && bf && gr.found && bf.found) {
+      this.unit.compared++;
+      if (gr.steps === bf.steps) this.unit.greedyOptimal++;
+      this.unit.points.add(gr.steps, bf.steps, rec.key);
     }
     rec.runs.forEach((r, v) => {
       const p = this.per[v];
@@ -239,6 +260,7 @@ class Collector {
         costHist: [...this.optCostHist.entries()].sort((a, b) => a[0] - b[0]),
         actions: this.optActions.toJSON(),
       },
+      unitCost: { compared: this.unit.compared, greedyOptimal: this.unit.greedyOptimal, points: this.unit.points.toJSON() },
       algos,
     };
   }
@@ -301,7 +323,8 @@ export function createRunner(cfg = {}) {
       const isGoal = (s) => s === 0;
       const succOf = (s) => table.succ[s];
       const zero = () => 0;
-      const problems = VARIANTS.map((v) => ({ start: 0, isGoal, succ: succOf, h: v.h ? ((arr) => (s) => arr[s])(hs[v.h]) : zero }));
+      const cellsOf = (s) => table.cellsOf(s);
+      const problems = VARIANTS.map((v) => ({ start: 0, actions: model.actions, isGoal, succ: succOf, cells: cellsOf, h: v.h ? ((arr) => (s) => arr[s])(hs[v.h]) : zero }));
       return { table, solved, problems };
     };
     return {
@@ -312,7 +335,7 @@ export function createRunner(cfg = {}) {
         const runs = VARIANTS.map((v, k) => {
           const p = ctx.problems[k];
           p.start = i;
-          return slim(model, search(v.algo, p, { maxExpanded }));
+          return slim(model, search(v.algo, p, { maxExpanded: Math.min(maxExpanded, v.maxExpanded ?? Infinity) }));
         });
         return { key: model.encode(ctx.table.cellsOf(i)), opt: ctx.solved.opt[i], steps: ctx.solved.steps[i], sides: ctx.solved.sides[i], runs };
       },
@@ -333,7 +356,7 @@ export function createRunner(cfg = {}) {
       const cells = model.random(probs, seededRng(Math.imul(seed, 0x9e3779b1) + i));
       const base = makeProblem(model, cells, 'gap');
       base.warm(maxExpanded);
-      const runs = VARIANTS.map((v) => slim(model, search(v.algo, base.using(v.h || 'zero'), { maxExpanded })));
+      const runs = VARIANTS.map((v) => slim(model, search(v.algo, base.using(v.h || 'zero'), { maxExpanded: Math.min(maxExpanded, v.maxExpanded ?? Infinity) })));
       // Reference optimum: any exact algorithm that finished (one of them may hit the expansion limit).
       const best = exactIndexes.map((k) => runs[k]).find((r) => r.found);
       return { key: base.start, opt: best ? best.cost : null, steps: best ? best.steps : 0, sides: best ? best.sides : 0, runs };

@@ -29,6 +29,7 @@ export function makeProblem(model, startCells, heuristic = 'gap') {
     const memo = new Map();
     return {
       model,
+      actions: model.actions,
       start,
       heuristic: name,
       isGoal: (s) => info(s).goal,

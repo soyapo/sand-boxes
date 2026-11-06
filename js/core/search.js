@@ -4,6 +4,8 @@
 //   problem.isGoal(s)    goal test
 //   problem.succ(s)      array of { a: actionId, s: nextState, c: cost }
 //   problem.h(s)         heuristic estimate (only used by the informed algorithms)
+//   problem.actions      the model's action list   (only used by the greedy approach)
+//   problem.cells(s)     decoded cell array of s   (only used by the greedy approach)
 //
 // Every algorithm returns
 //   { found, aborted, cost, path: [{a, s, c}], expanded, generated, maxFrontier, maxMemory, iterations, timeMs }
@@ -66,6 +68,53 @@ function succeed(st, path) {
   st.path = path;
   st.cost = path.reduce((sum, e) => sum + e.c, 0);
   return st;
+}
+
+// ------------------------------------------------------ the greedy approach
+
+/**
+ * The "greedy approach" of the assignment. It is not a search and uses no heuristic: it is the
+ * fixed procedure described in class.
+ *
+ *   - No side gate is ever opened; the two columns are emptied independently, left then right.
+ *   - In a column, start at the topmost box that contains sand and open the gate under it. The
+ *     sand either moves down or stays stuck (the box below is full); either way go on to the box
+ *     below and do the same, down to the outlet.
+ *   - Repeat such sweeps until the column holds no sand.
+ *
+ * A gate that would move nothing is not an action, so a "stuck" box is simply skipped. On sand-only
+ * grids the procedure always finishes; with water it can get stuck behind concrete, in which case
+ * it reports failure.
+ */
+function sweep(p, o) {
+  const st = newStats();
+  st.maxFrontier = 1;
+  st.maxMemory = 1; // it only ever holds the current state
+  const rows = p.actions.length / 3;
+  const path = [];
+  let s = p.start;
+  for (let col = 0; col < 2 && !p.isGoal(s); col++) {
+    for (;;) {
+      const cells = p.cells(s);
+      let top = 0;
+      while (top < rows && (cells[top * 2 + col] !== 1 && cells[top * 2 + col] !== 2)) top++;
+      if (top === rows) break; // no sand left in this column
+      let moved = false;
+      for (let row = top; row < rows; row++) {
+        const id = rows + col * rows + row; // the top-down gate under box (row, col)
+        const succ = p.succ(s);
+        st.generated += succ.length;
+        const e = succ.find((x) => x.a === id);
+        if (!e) continue; // nothing would move: skip this box
+        st.expanded++;
+        path.push(e);
+        s = e.s;
+        moved = true;
+      }
+      if (!moved || st.expanded >= o.maxExpanded) return st; // stuck (only possible with water or concrete)
+    }
+  }
+  return p.isGoal(s) ? succeed(st, path) : st;
 }
 
 // ------------------------------------------------------------ uninformed
@@ -258,17 +307,61 @@ function idastar(p, o) {
   }
 }
 
+/**
+ * Recursive best-first search (Korf). Keeps only the current path and the siblings along it, and
+ * remembers in each abandoned subtree the best f-value found there, so it can come back to it.
+ * It is a pure tree search: memory is linear in the depth, at the price of re-expanding states.
+ */
+function rbfs(p, o) {
+  const st = newStats();
+  const path = [];
+  let held = 0;
+  // returns the new backed-up f of the node, or -1 when the goal was found below it
+  const visit = (s, g, f, limit) => {
+    if (p.isGoal(s)) return -1;
+    if (st.expanded >= o.maxExpanded) { st.aborted = true; return Infinity; }
+    st.expanded++;
+    const succ = p.succ(s);
+    st.generated += succ.length;
+    if (!succ.length) return Infinity;
+    const fs = new Array(succ.length);
+    for (let i = 0; i < succ.length; i++) fs[i] = Math.max(g + succ[i].c + p.h(succ[i].s), f);
+    held += succ.length;
+    if (held > st.maxMemory) st.maxMemory = held;
+    if (path.length + 1 > st.maxFrontier) st.maxFrontier = path.length + 1;
+    for (;;) {
+      let best = 0;
+      let alt = Infinity;
+      for (let i = 1; i < fs.length; i++) {
+        if (fs[i] < fs[best]) { alt = fs[best]; best = i; } else if (fs[i] < alt) alt = fs[i];
+      }
+      if (fs[best] > limit || fs[best] === Infinity) { held -= succ.length; return fs[best]; }
+      const e = succ[best];
+      path.push(e);
+      const r = visit(e.s, g + e.c, fs[best], Math.min(limit, alt));
+      if (r === -1) return -1;
+      path.pop();
+      if (st.aborted) { held -= succ.length; return Infinity; }
+      fs[best] = r;
+    }
+  };
+  const r = visit(p.start, 0, p.h(p.start), Infinity);
+  return r === -1 ? succeed(st, path.slice()) : st;
+}
+
 // ------------------------------------------------------------------ registry
 
 export const ALGORITHMS = Object.freeze({
-  bfs: { name: 'BFS', long: 'Breadth-first search', informed: false, optimal: false, run: (p, o) => bfs(p, o), note: 'Fewest actions, ignores cost.' },
-  dfs: { name: 'DFS', long: 'Depth-first search', informed: false, optimal: false, run: (p, o) => dfs(p, o), note: 'First solution found, ignores cost.' },
-  ids: { name: 'IDS', long: 'Iterative deepening DFS', informed: false, optimal: false, run: (p, o) => ids(p, o), note: 'Fewest actions with depth-first memory.' },
-  ucs: { name: 'UCS', long: 'Uniform-cost search (Dijkstra)', informed: false, optimal: true, run: (p, o) => bestFirst(p, o, 'ucs'), note: 'Cheapest solution, no heuristic.' },
-  greedy: { name: 'Greedy', long: 'Greedy best-first search', informed: true, optimal: false, run: (p, o) => bestFirst(p, o, 'greedy'), note: 'Always expands the state that looks closest to the goal.' },
-  astar: { name: 'A*', long: 'A* search', informed: true, optimal: true, run: (p, o) => bestFirst(p, o, 'astar', 1), note: 'Cheapest solution, guided by the heuristic.' },
-  wastar: { name: 'Weighted A*', long: 'Weighted A* (w = 2)', informed: true, optimal: false, run: (p, o) => bestFirst(p, o, 'astar', o.weight ?? 2), note: 'Faster than A*, cost at most w × optimal.' },
-  idastar: { name: 'IDA*', long: 'Iterative deepening A*', informed: true, optimal: true, run: (p, o) => idastar(p, o), note: 'Cheapest solution by depth-first f-contours.' },
+  sweep: { name: 'Greedy approach', long: 'Greedy approach of the assignment', informed: false, optimal: false, order: 'no frontier: a fixed top-to-bottom sweep of each column', run: (p, o) => sweep(p, o), note: 'Not a search: flush each column straight down, never using a side gate.' },
+  bfs: { name: 'BFS', long: 'Breadth-first search', informed: false, optimal: false, order: 'FIFO', run: (p, o) => bfs(p, o), note: 'Fewest actions, ignores cost.' },
+  dfs: { name: 'DFS', long: 'Depth-first search', informed: false, optimal: false, order: 'LIFO', run: (p, o) => dfs(p, o), note: 'First solution found, ignores cost.' },
+  ids: { name: 'IDS', long: 'Iterative deepening DFS', informed: false, optimal: false, order: 'depth-limited DFS, limit 0, 1, 2…', run: (p, o) => ids(p, o), note: 'Fewest actions with depth-first memory.' },
+  ucs: { name: 'UCS', long: 'Uniform-cost search (Dijkstra)', informed: false, optimal: true, order: 'lowest g', run: (p, o) => bestFirst(p, o, 'ucs'), note: 'Cheapest solution, no heuristic.' },
+  astar: { name: 'A*', long: 'A* search', informed: true, optimal: true, order: 'lowest g + h', run: (p, o) => bestFirst(p, o, 'astar', 1), note: 'Cheapest solution, guided by the heuristic.' },
+  rbfs: { name: 'RBFS', long: 'Recursive best-first search', informed: true, optimal: true, order: 'best f first, backing up f-values', run: (p, o) => rbfs(p, o), note: 'Cheapest solution in linear memory; re-expands states heavily.' },
+  idastar: { name: 'IDA*', long: 'Iterative deepening A*', informed: true, optimal: true, order: 'DFS inside growing g + h contours', run: (p, o) => idastar(p, o), note: 'Cheapest solution by depth-first f-contours.' },
+  wastar: { name: 'Weighted A*', long: 'Weighted A* (w = 2)', informed: true, optimal: false, order: 'lowest g + 2h', run: (p, o) => bestFirst(p, o, 'astar', o.weight ?? 2), note: 'Faster than A*, cost at most w × optimal.' },
+  gbfs: { name: 'Greedy best-first', long: 'Greedy best-first search', informed: true, optimal: false, order: 'lowest h', run: (p, o) => bestFirst(p, o, 'greedy'), note: 'The informed-search “greedy”: always expands the state that looks closest to the goal.' },
 });
 
 /**

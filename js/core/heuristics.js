@@ -82,6 +82,6 @@ function fall(model, cells) {
 export const HEURISTICS = Object.freeze({
   gap: { name: 'Volume + gates', short: 'h₂', admissible: true, fn: gap, note: 'Sand volume plus 3 for every box that is not full and has sand above it (its top gate must be opened by a paid action). Admissible and consistent.' },
   volume: { name: 'Sand volume', short: 'h₁', admissible: true, fn: volume, note: '4T + ⌈T⌉ for T units of sand left. Admissible and consistent.' },
-  fall: { name: 'Fall distance', short: 'h₃', admissible: false, fn: fall, note: '5 per unit of sand per gate still below it. Overestimates, so A* loses its guarantee — the natural guide for greedy search.' },
+  fall: { name: 'Fall distance', short: 'h₃', admissible: false, fn: fall, note: '5 per unit of sand per gate still below it. Overestimates, so A* loses its guarantee — the natural guide for greedy best-first search.' },
   zero: { name: 'Zero', short: 'h₀', admissible: true, fn: zero, note: 'No information: A* behaves exactly like uniform-cost search.' },
 });

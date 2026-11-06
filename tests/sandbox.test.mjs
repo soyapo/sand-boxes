@@ -125,12 +125,11 @@ test('the corrected plan matches the state-by-state trace on the 5x2 grid', () =
   assert.deepEqual(costs, [1, 1, 7, 9, 9, 9, 5, 3, 5, 5]);
 });
 
-test('assignment example: optimum is 45, greedy search gives 47', () => {
+test('assignment example: optimum is 45 with every exact algorithm', () => {
   const m = new Sandbox({ rows: 4 });
   const start = parseGrid(PROFESSOR_EXAMPLE);
-  for (const algo of ['ucs', 'astar', 'idastar']) assert.equal(solve(m, start, algo).cost, 45, algo);
+  for (const algo of ['ucs', 'astar', 'idastar', 'rbfs']) assert.equal(solve(m, start, algo).cost, 45, algo);
   assert.equal(solve(m, start, 'astar', 'volume').cost, 45);
-  assert.equal(solve(m, start, 'greedy', 'fall').cost, 47);
   assert.equal(solve(m, start, 'bfs').path.length, 7);
   for (const algo of Object.keys(ALGORITHMS)) {
     const r = solve(m, start, algo);
@@ -139,6 +138,41 @@ test('assignment example: optimum is 45, greedy search gives 47', () => {
     assert.ok(m.isGoal(replay.cells), `${algo} path ends in a goal state`);
     assert.equal(replay.total, r.cost);
   }
+});
+
+test('greedy approach of the assignment: straight-down sweep, column by column, no side gates', () => {
+  const m = new Sandbox({ rows: 4 });
+  const start = parseGrid(PROFESSOR_EXAMPLE);
+  const r = solve(m, start, 'sweep');
+  // exactly the sequence given in class: left 5+5+9+5, then right 9+9+5
+  assert.deepEqual(r.path.map((e) => e.c), [5, 5, 9, 5, 9, 9, 5]);
+  assert.deepEqual(r.path.map((e) => m.actions[e.a].short), ['L1↓', 'L2↓', 'L4⤓', 'L4⤓', 'R3↓', 'R4⤓', 'R4⤓']);
+  assert.equal(r.cost, 47);
+  assert.ok(r.path.every((e) => m.actions[e.a].type === 'a'));
+
+  // a sweep starts at the topmost sand box and works down; stuck boxes are skipped, not paid for
+  const m3 = new Sandbox({ rows: 3 });
+  const tall = solve(m3, parseGrid('1 0/1 0/1 0'), 'sweep');
+  assert.deepEqual(tall.path.map((e) => e.c), [9, 9, 5]);
+  const halves = solve(m3, parseGrid('½ 0/½ 0/½ 0'), 'sweep');
+  // 1/2,1/2,1/2 -> 0,1,1/2 (3) -> 0,1/2,1 (7) -> 0,0,1/2 (7: the half box follows the flushed full one) -> empty (3)
+  assert.deepEqual(halves.path.map((e) => e.c), [3, 7, 7, 3]);
+  assert.ok(m3.isGoal(play(m3, parseGrid('½ 0/½ 0/½ 0'), halves.path.map((e) => [e.a, e.c])).cells));
+
+  // with water it can get stuck behind concrete and then reports failure instead of looping
+  const stuck = solve(m3, parseGrid('0 0/½ 0/# 0'), 'sweep');
+  assert.equal(stuck.found, false);
+});
+
+test('with one unit per gate the greedy approach uses the fewest possible actions (all 6,561 states of 4x2)', () => {
+  const m = new Sandbox({ rows: 4 });
+  const table = buildTable(m);
+  let worse = 0;
+  for (let i = 0; i < table.N; i++) {
+    const cells = table.cellsOf(i);
+    if (solve(m, cells, 'sweep').path.length !== solve(m, cells, 'bfs').path.length) worse++;
+  }
+  assert.equal(worse, 0);
 });
 
 test('heuristics h1 and h2 are admissible and consistent on every state (rows 1-5; rows 1-4 for the other door rules)', () => {

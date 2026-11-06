@@ -1,23 +1,48 @@
 # Sand Boxes
 
-A two-column gravity puzzle, modelled as a state-space search problem and solved with eight classic
-search algorithms — with an animated simulator, a solver you can watch, and a full benchmark over
-every one of the 59,049 initial states of the 5×2 grid.
+A two-column gravity puzzle, modelled as a state-space search problem and solved with the greedy
+approach from class and nine search algorithms — with an animated simulator, a solver you can
+watch, and a full benchmark over every one of the 59,049 initial states of the 5×2 grid.
 
 Everything runs in the browser as a static site (no build step, no dependencies), so it can be
 hosted on GitHub Pages as is.
 
 **Live site:** <https://soyapo.github.io/sand-boxes/> · **Repository:** <https://github.com/soyapo/sand-boxes>
 
+![The simulator replaying the optimal plan for the assignment's example, with the cost of the current step explained](docs/screenshots/simulator.jpg)
+
+![The Analysis tab: histogram of Greedy_opt_ratio and greedy cost against the optimum over all 59,049 states](docs/screenshots/analysis.jpg)
+
+![Time per algorithm on a logarithmic axis, with the full comparison table](docs/screenshots/time-and-memory.jpg)
+
 ## What is in the box
 
 | | |
 |---|---|
-| **Simulator** | Any grid from 1×2 to 8×2. Paint boxes, generate random grids with the assignment's probabilities, open gates by hand and watch the sand fall and level. |
-| **Solver** | BFS, DFS, IDS, UCS, Greedy best-first, A*, Weighted A*, IDA*, with four heuristics. The solution is animated step by step with its cost; "Compare all" runs every algorithm on the same grid. |
-| **Analysis** | For all 3¹⁰ = 59,049 initial states: histogram of `Greedy_opt_ratio`, scatter of greedy cost against the optimum, scatter of actions against side-gate actions, and time and memory of every algorithm. Click any point to open an example in the simulator. New analyses can be run in the browser. |
+| **Simulator** | Any grid from 1×2 to 8×2. Paint boxes, generate random grids with the assignment's probabilities, open gates by hand and watch the sand fall and level. Every step is explained in words: the level of the upper box before and after (s, s′), which doors above were pressed open, and how that adds up to the cost. Grids can be shared as links, and the player works from the keyboard (Space, ← →, Home, End). |
+| **Solver** | The greedy approach of the assignment (straight-down sweep, no side gates), the four main searches (BFS, DFS, IDS, UCS) and the informed ones (A*, RBFS, IDA*, Weighted A*, greedy best-first) with heuristics designed for this problem. The solution is animated step by step with its cost; "Compare all" runs everything on the same grid. |
+| **Analysis** | For all 3¹⁰ = 59,049 initial states: histogram of `Greedy_opt_ratio`, scatter of greedy cost against the optimum, scatter of actions against side-gate actions, time and memory of every algorithm, and a check of the claim that the greedy approach is optimal when every gate costs one unit. Click any point to open an example in the simulator. New analyses can be run in the browser. |
 | **Water variant** | The proposed extension: water, concrete that blocks a box for good, +10 per concrete box, goal "no sand left". Same simulator, same solvers, benchmarked on 1,000 random instances. |
 | **Rules** | The problem statement, the worked example from the assignment, and a summary of algorithms and heuristics. |
+
+## Team and how this was built
+
+| | |
+|---|---|
+| **soyapo** | [github.com/soyapo](https://github.com/soyapo) |
+| **Kia Sheikhi** | [github.com/kia8506](https://github.com/kia8506) |
+
+This is a group project for the Artificial Intelligence course (search algorithms). The assignment
+is a "vibe coding" exercise: the code was written with an AI coding assistant (Claude Code), which
+we directed, checked and corrected. The exported conversation is in [chats/](chats/), including
+the points where the model's first reading of the physics was wrong and we corrected it.
+
+What came from us rather than from the model: the statement of the problem; the door rule ("a door
+only opens when material presses on it from both sides, and everything falls at the same moment");
+the state-by-state trace showing that the assignment's side-gate plan costs 54 and not 45; the
+definition of the greedy approach as it was explained in class; and the decision of what to
+measure. What the model did: the implementation, the heuristics and their proofs, the benchmark
+and the write-up, all of which we reviewed.
 
 ## Deliverables
 
@@ -62,11 +87,11 @@ node scripts/solve.mjs "1 0 / 0 1 / 0 1 / 1 0" --all
 ```
 
 ```bash
-node scripts/solve.mjs --random --rows 5 --seed 3 --water --algo greedy
+node scripts/solve.mjs "1 0 / 0 1 / 0 1 / 1 0" --algo sweep
 ```
 
 Regenerate the datasets shown in the Analysis tab (uses worker threads; the 59,049-state run takes
-roughly half an hour on four cores, dominated by IDA* and IDS):
+roughly half an hour on four cores, dominated by IDA*, RBFS and IDS):
 
 ```bash
 npm run analyze
@@ -94,7 +119,7 @@ file tells GitHub Pages to serve the files untouched.
 index.html              the page (three tabs: Simulator, Analysis, Rules)
 css/style.css           styles, light and dark theme
 js/core/model.js        state, physics, actions, cost function (sand, water, concrete)
-js/core/search.js       BFS, DFS, IDS, UCS, Greedy, A*, Weighted A*, IDA*
+js/core/search.js       greedy approach, BFS, DFS, IDS, UCS, A*, RBFS, IDA*, Weighted A*, greedy best-first
 js/core/heuristics.js   h₀ zero, h₁ sand volume, h₂ volume + gates, h₃ fall distance
 js/core/problem.js      glue between model and search (memoised successors)
 js/core/analysis.js     batch evaluation: transition table, optimal costs, statistics
@@ -126,7 +151,7 @@ it — so opening the gate under a full box lets the pile resting on it follow, 
 all at the same moment. **Action b** opens a side gate: a full box and an empty one become two
 half boxes, cost 1. The goal is an empty grid.
 
-On the assignment's worked example this gives 47 for the greedy plan and 46 for the "other
+On the assignment's worked example this gives 47 for the greedy approach and 46 for the "other
 alternative", as printed. The side-gate plan printed as 45 actually costs 54 (one action of cost 9
 is missing from it), and the true optimum is 45 by a different plan; see
 [docs/01-problem-original.md](docs/01-problem-original.md).

@@ -18,6 +18,25 @@ const el = (tag, props = {}, children = []) => {
 const fmtInt = (n) => Math.round(n).toLocaleString('en-US');
 const fmtMs = (ms) => (ms < 10 ? ms.toFixed(2) : ms < 100 ? ms.toFixed(1) : fmtInt(ms));
 const fmtUnits = (half) => (half === 0 ? '0' : `${half >> 1 || ''}${half & 1 ? '½' : ''}`);
+const LEVEL_TEXT = ['0', '½', '1'];
+
+/** Plain-language account of one step: what moved and where its cost comes from. */
+function explainStep(step) {
+  const a = model.actions[step.a];
+  const followed = step.events.filter((e) => e.chain).length;
+  const concrete = step.concrete ? ` Plus ${step.concrete * S.penalty} for ${step.concrete === 1 ? 'the box' : `${step.concrete} boxes`} that set into concrete.` : '';
+  if (a.type === 'b') {
+    return step.concrete
+      ? `${a.label}: the full box spills half its content into the half box of the other material. Cost 1.${concrete}`
+      : `${a.label}: the full box levels with the empty one, leaving ½ and ½. Cost 1.`;
+  }
+  const s = LEVEL_TEXT[step.s];
+  const s2 = LEVEL_TEXT[step.s2];
+  const chain = followed
+    ? ` The box was full, so the door${followed === 1 ? '' : 's'} above ${followed === 1 ? 'was' : 'were'} pressed from both sides and ${followed} box${followed === 1 ? '' : 'es'} above followed at the same moment.`
+    : '';
+  return `${a.label}: upper box s = ${s} before, s′ = ${s2} after.${chain} Cost 1 + 4·(${s} + ${s2}) = ${1 + 2 * (step.s + step.s2)}.${concrete}`;
+}
 
 const CHAIN_HINTS = {
   press: 'A door above opens only when it is pressed from both sides: sand on top of it and a full box under it. All opened doors act at the same moment.',
@@ -184,6 +203,7 @@ function refresh() {
     actions.append(b);
   }
 
+  $('stepNote').textContent = S.cursor ? explainStep(S.steps[S.cursor - 1]) : avail.size ? 'Open a gate, or press Solve. Each step shows where its cost comes from.' : '';
   renderTimeline();
   $('plFirst').disabled = $('plPrev').disabled = S.cursor === 0;
   $('plNext').disabled = $('plLast').disabled = S.cursor >= S.steps.length;
@@ -206,10 +226,15 @@ function renderTimeline() {
     const a = model.actions[step.a];
     const li = el('li', { className: k + 1 === S.cursor ? 'current' : k < S.cursor ? 'done' : '' }, [
       el('span', { className: 'n', textContent: k + 1 }),
-      el('span', {}, [el('span', { className: 'kind', textContent: a.type, title: a.type === 'a' ? 'Top-down gate' : 'Side gate' }), a.label + (step.concrete ? ' · concrete' : '')]),
+      el('span', {}, [
+        el('span', { className: 'kind', textContent: a.type, title: a.type === 'a' ? 'Top-down gate' : 'Side gate' }),
+        a.label + (step.concrete ? ' · concrete' : ''),
+        a.type === 'a' ? el('span', { className: 'ss', textContent: `${LEVEL_TEXT[step.s]}→${LEVEL_TEXT[step.s2]}`, title: 'Level of the upper box before → after (s → s′)' }) : '',
+      ]),
       el('span', { className: 'c', textContent: `+${step.cost}` }),
       el('span', { className: 't', textContent: total }),
     ]);
+    li.title = explainStep(step);
     li.addEventListener('click', () => jump(k + 1));
     list.append(li);
     if (k + 1 === S.cursor) {
@@ -228,7 +253,7 @@ function renderTimeline() {
 function makeStep(before, id) {
   const events = [];
   const r = model.apply(before, id, events);
-  return r ? { a: id, cost: r.cost, cells: r.cells, events, before, concrete: r.concrete } : null;
+  return r ? { a: id, cost: r.cost, cells: r.cells, events, before, concrete: r.concrete, s: r.s, s2: r.s2 } : null;
 }
 
 async function manualAction(id) {
@@ -370,7 +395,7 @@ function syncHeuristic(defaultForAlgo = false) {
   const algo = ALGORITHMS[$('algo').value];
   $('algoHint').textContent = `${algo.long}. ${algo.note}`;
   $('heur').disabled = !algo.informed;
-  if (defaultForAlgo && algo.informed) $('heur').value = $('algo').value === 'greedy' ? 'fall' : 'gap';
+  if (defaultForAlgo && algo.informed) $('heur').value = $('algo').value === 'gbfs' ? 'fall' : 'gap';
   $('heurHint').textContent = algo.informed ? HEURISTICS[$('heur').value].note : 'Not used by this algorithm.';
 }
 
@@ -540,6 +565,26 @@ function openInSimulator({ cells, algo = 'astar', heuristic, plan }) {
   solve();
 }
 
+/** Grid <-> URL: ?g=1-0_h-1 means rows "1 0" and "½ 1" (h = ½ sand, w/W water, C concrete). */
+function gridToParam(cells) {
+  return formatGrid(cells, '_').replaceAll(' ', '-').replaceAll('½', 'h').replaceAll('#', 'C');
+}
+function paramToGrid(text) {
+  const cells = parseGrid(text.replaceAll('_', '/').replaceAll('-', ' '));
+  if (cells.length < 2 || cells.length > 16) throw new RangeError('use between 1 and 8 rows');
+  return cells;
+}
+
+function onKey(e) {
+  if (e.metaKey || e.ctrlKey || e.altKey || $('tab-sim').hidden) return;
+  if (e.target.closest('input, select, textarea, button, [role="tab"], summary, a')) return;
+  const keys = { ' ': 'plPlay', ArrowRight: 'plNext', ArrowLeft: 'plPrev', Home: 'plFirst', End: 'plLast' };
+  const id = keys[e.key];
+  if (!id || $(id).disabled) return;
+  e.preventDefault();
+  $(id).click();
+}
+
 // --------------------------------------------------------------------- init
 
 function init() {
@@ -592,6 +637,22 @@ function init() {
   $('btnLoadText').addEventListener('click', loadText);
   $('gridText').addEventListener('keydown', (e) => { if (e.key === 'Enter') loadText(); });
 
+  $('btnCopyLink').addEventListener('click', async () => {
+    const url = new URL(location.href);
+    url.hash = '';
+    url.search = `?g=${gridToParam(S.start)}`;
+    const b = $('btnCopyLink');
+    try {
+      await navigator.clipboard.writeText(url.href);
+      b.textContent = 'Link copied';
+    } catch {
+      history.replaceState(null, '', url.href); // clipboard blocked: put it in the address bar instead
+      b.textContent = 'Link is in the address bar';
+    }
+    setTimeout(() => { b.textContent = 'Copy link to this grid'; }, 1800);
+  });
+  document.addEventListener('keydown', onKey);
+
   $('btnSolve').addEventListener('click', () => solve());
   $('btnCompare').addEventListener('click', compare);
   $('plPlay').addEventListener('click', play);
@@ -610,10 +671,10 @@ function init() {
 
   // rules page tables
   $('algoTable').append(
-    el('thead', {}, el('tr', {}, ['Algorithm', 'Frontier order', 'Uses h', 'Cheapest solution guaranteed', 'Notes'].map((t) => el('th', { textContent: t })))),
+    el('thead', {}, el('tr', {}, ['Algorithm', 'Order of expansion', 'Uses h', 'Cheapest solution guaranteed', 'Notes'].map((t) => el('th', { textContent: t })))),
     el('tbody', {}, Object.values(ALGORITHMS).map((a) => el('tr', {}, [
       el('td', { textContent: `${a.name} — ${a.long}` }),
-      el('td', { textContent: { BFS: 'FIFO', DFS: 'LIFO', IDS: 'depth-limited DFS, limit 0, 1, 2…', UCS: 'lowest g', Greedy: 'lowest h', 'A*': 'lowest g + h', 'Weighted A*': 'lowest g + 2h', 'IDA*': 'DFS inside growing g + h contours' }[a.name] }),
+      el('td', { className: 'wrap', textContent: a.order }),
       el('td', { textContent: a.informed ? 'yes' : 'no' }),
       el('td', { textContent: a.optimal ? (a.informed ? 'yes, with an admissible h' : 'yes') : 'no' }),
       el('td', { className: 'wrap', textContent: a.note }),
@@ -645,7 +706,12 @@ function init() {
 
   syncSetupControls();
   rebuildModel();
-  setStart(parseGrid('1 0/0 1/1 ½/½ 1/1 0'));
+  let initial = parseGrid('1 0/0 1/1 ½/½ 1/1 0');
+  const shared = new URLSearchParams(location.search).get('g');
+  if (shared) {
+    try { initial = paramToGrid(shared); } catch { /* malformed link: fall back to the default grid */ }
+  }
+  loadGrid(initial);
   showTab(location.hash.slice(1) || 'sim');
 }
 

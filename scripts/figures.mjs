@@ -154,6 +154,7 @@ function tables(name, data) {
   const bySides = new Map();
   for (const p of optimal.actions) bySides.set(p[1], (bySides.get(p[1]) || 0) + p[2]);
   L.push(`optimal plans by number of side gates: ${[...bySides.entries()].sort((a, b) => a[0] - b[0]).map(([k, v]) => `${k}: ${int(v)} (${pct(v / meta.solvable)})`).join(', ')}`);
+  if (data.unitCost) L.push(`unit cost: greedy approach uses the fewest actions on ${int(data.unitCost.greedyOptimal)} of ${int(data.unitCost.compared)}`);
   L.push(`greedy: optimal on ${int(g.optimal)} (${pct(g.optimal / meta.solvable)}), ratio mean ${g.ratio.mean.toFixed(4)}, median ${g.ratio.median.toFixed(4)}, p95 ${g.ratio.p95.toFixed(3)}, max ${g.ratio.max.toFixed(3)}; greedy plans using side gates: ${int(g.actions.reduce((s, p) => s + (p[1] > 0 ? p[2] : 0), 0))}`);
   L.push('\n| Ratio | Instances | Share |\n|---|---:|---:|');
   const n = g.ratio.bins.reduce((s, v) => s + v, 0);
