@@ -90,11 +90,6 @@
 
           <details>
             <summary>Physics options</summary>
-            <div class="field">
-              <label class="label" for="chain">Door rule</label>
-              <select id="chain"></select>
-              <p class="hint" id="chainHint"></p>
-            </div>
             <div class="field row" id="penaltyField">
               <label class="label" for="penalty">Concrete penalty</label>
               <input id="penalty" type="number" min="0" max="100" step="1" value="10">
@@ -204,10 +199,6 @@
               <select id="liveCount"></select>
             </div>
             <div class="field">
-              <label class="label" for="liveChain">Door rule</label>
-              <select id="liveChain"></select>
-            </div>
-            <div class="field">
               <label class="label" for="liveSeed">Seed</label>
               <input id="liveSeed" type="number" value="1" min="1" step="1">
             </div>
@@ -237,18 +228,18 @@
 
           <h3>Action a — top-down gate</h3>
           <ul>
-            <li>Sand falls from the upper box into the lower one until the lower box is full or the upper box is empty. Through an outlet, the whole box drains.</li>
-            <li><b>Doors pressed from both sides:</b> a spring door opens by itself only when material presses on it from both sides, that is, the box above it holds sand and the box below it is <em>full</em> (touching the door from underneath). So when you open the gate under a full box, the door on top of that box opens too; the door above the next box opens as well if that box was also full, and so on up the pile. A half-full box does not touch the door above it, so nothing above it follows.</li>
-            <li>All these doors are open at the same moment and all the sand falls together.</li>
-            <li>Cost = <b>1 + 4·(s + s′)</b>, where s is the level of the upper box before the action and s′ its level after everything has fallen (0, ½ or 1).</li>
+            <li>The gates are <b>spring loaded</b>. A closed gate stays closed until you open it. Opening the gate under a box that holds sand is an action even when the box below is full — nothing moves yet, but the gate is now open.</li>
+            <li>An open gate <b>stays open as long as there is material directly above it</b> and closes by itself as soon as that box is empty. A gate that is already open cannot be opened again.</li>
+            <li>Every open gate conducts: whatever can flow through the open gates flows <b>at the same moment</b>, until nothing moves any more. Through an open outlet the bottom box drains, and the boxes above it follow through their open gates.</li>
+            <li>Cost = <b>1 + 4·(s + s′)</b>, where s is the level of the box above the opened gate before the action and s′ its level after everything has settled (0, ½ or 1).</li>
           </ul>
 
           <h3>Action b — side gate</h3>
           <ul>
             <li>Sand levels out only when one box is full and the other is empty: both end up half full. Any other pair would need a level that is not 0, ½ or 1, so nothing moves.</li>
-            <li>Cost = <b>1</b>.</li>
+            <li>Cost = <b>1</b>. Side gates close again right after use; what moved may then flow on through open top-down gates.</li>
           </ul>
-          <p class="note">Gates that would move nothing are not offered as actions.</p>
+          <p class="note">An action that would change nothing (a side gate with nothing to level, an open gate, a gate under an empty box) is not offered.</p>
 
           <h3>The greedy approach</h3>
           <p>“Greedy” in this assignment is <em>not</em> greedy best-first search (that one needs a heuristic). It is the simple procedure proposed in class:</p>
@@ -260,7 +251,7 @@
           <p>With a cost of one unit per gate this procedure uses the fewest possible actions. With the cost function above it usually does not give the cheapest plan — which is exactly what the histogram of <code>Greedy_opt_ratio</code> in the Analysis tab measures.</p>
 
           <h3>Why the cost function is interesting</h3>
-          <p>Flushing a full box while more sand rests on it costs 9 instead of 5, because the box is full again afterwards (s′ = 1). Half boxes are cheap to move (3) and cheap to flush, and a side gate turns one full box into two halves for just 1 — but halves break the chain of pressed doors, so a pile with a half box in the middle no longer drops in one go. The cheapest plan balances the two.</p>
+          <p>Opening a gate under a loaded box is expensive (9 for a full box that is full again afterwards), but once a gate is open everything that falls through it later is free. One outlet action can drain a whole column for 5 if the gates above it are already open. The art is to open gates when the boxes above them are light — by moving halves first, or by splitting a box through a side gate for 1 — and then let the pile fall through all of them at once.</p>
         </article>
 
         <article class="card prose">
@@ -273,19 +264,19 @@
             <thead><tr><th>Plan</th><th>Actions</th><th class="num">Cost</th><th></th></tr></thead>
             <tbody>
               <tr><td>Greedy approach</td><td>Left 5+5+9+5, right 9+9+5</td><td class="num">47</td><td><button class="btn small" data-load="1 0/0 1/0 1/1 0" data-algo="sweep">Replay</button></td></tr>
-              <tr><td>Side gates on rows 2 and 3</td><td>1+1, then 7+9+9+9+5 and 3+5+5</td><td class="num">54</td><td><button class="btn small" data-load="1 0/0 1/0 1/1 0" data-plan="S2 S3 L1 L2 L4 L4 L4 R2 R3 R4">Replay</button></td></tr>
-              <tr><td>Same, merging the halves first</td><td>1+1, then 3+5+9+9+5 and 3+5+5</td><td class="num">46</td><td><button class="btn small" data-load="1 0/0 1/0 1/1 0" data-plan="S2 S3 L2 L1 L4 L4 L4 R2 R3 R4">Replay</button></td></tr>
-              <tr class="hl"><td>Optimal (found by UCS / A*)</td><td>1, then 3+3+7+3 and 9+9+7+3</td><td class="num">45</td><td><button class="btn small" data-load="1 0/0 1/0 1/1 0" data-algo="astar">Replay</button></td></tr>
+              <tr><td>Side gates on rows 2 and 3</td><td>1+1, then 7+9+9+5 and 3+5+5</td><td class="num">45</td><td><button class="btn small" data-load="1 0/0 1/0 1/1 0" data-plan="S2 S3 L1 L2 L3 L4 R2 R3 R4">Replay</button></td></tr>
+              <tr><td>Same, merging the halves first</td><td>1+1, then 3+5+9+9+5 and 3+5+5</td><td class="num">46</td><td><button class="btn small" data-load="1 0/0 1/0 1/1 0" data-plan="S2 S3 L2 L1 L2 L3 L4 R2 R3 R4">Replay</button></td></tr>
+              <tr class="hl"><td>Optimal (found by UCS / A*)</td><td>1+3+3+1+3+7+7+3+5+5</td><td class="num">38</td><td><button class="btn small" data-load="1 0/0 1/0 1/1 0" data-algo="astar">Replay</button></td></tr>
             </tbody>
           </table>
-          <p>The assignment lists the second plan as 1+1, 7+9+9+5, 3+5+5 = 45. One 9 is missing there: after the action that costs 7 the left column is ½, 1, ½, 1. The half box in the third row does not press on the door above it, so the pile cannot drop in one go; it first has to be packed with one more action (cost 9) into 0, 1, 1, 1, and only then come the three flushes 9+9+5. That makes 54.</p>
-          <p>The true optimum is nevertheless 45, by a different plan: open the side gate of the <em>top</em> row. The two half boxes it creates are cheap to bring down, and the final flushes of both columns then cost 7 and 3 instead of 9 and 5.</p>
+          <p>All three plans of the assignment cost exactly what it says. The side-gate plan relies on the spring gates: after the step that costs 7 the left column is ½, 1, ½, 1 with the top gate still open; opening the next gate packs the column (9), opening the one below it between two full boxes moves nothing but costs 9, and the outlet then drains all three boxes for 5.</p>
+          <p>The search finds something cheaper. Split the top row and the bottom row sideways (1 each), walk the halves down the left column for 3 a step, and open the right column's gates one at a time from the bottom up while the boxes above them are only half loaded (7, 7, 3). Each outlet then empties its whole column for 5: total 38.</p>
 
           <h2>Proposed extension: water and concrete</h2>
           <p>Boxes may also start with water (half or full). Water obeys the same gate rules as sand, with one addition:</p>
           <ul>
             <li>Whenever sand flows into a box holding water, or water into a box holding sand, the two set into <b>concrete</b>. The box is blocked for good: nothing enters, leaves or passes through it.</li>
-            <li>Through a top-down gate this happens when the lower box has room. Through a side gate it happens when a full box faces a half-full box of the other material: half a box spills over and sets.</li>
+            <li>Through a top-down gate this happens when the lower box has room, also while material flows on through gates that are already open. Through a side gate it happens when a full box faces a half-full box of the other material: half a box spills over and sets. Water keeps a gate open just as sand does; concrete never moves and never lets anything through.</li>
             <li>Every box that turns to concrete adds <b>10</b> to the cost. The search does not stop there.</li>
             <li>The goal is unchanged: <em>no box contains sand</em>. Water and concrete may remain, so pouring water on trapped sand is a legitimate, if expensive, way to get rid of it.</li>
           </ul>

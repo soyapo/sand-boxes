@@ -1,7 +1,7 @@
 // Page controller: simulator, solver panel, tabs.
 
 import {
-  Sandbox, parseGrid, formatGrid, PROBS_SAND, PROBS_WATER, CHAIN_MODES, CELL_NAMES,
+  Sandbox, parseGrid, formatGrid, PROBS_SAND, PROBS_WATER, CELL_NAMES, MAX_ROWS,
   EMPTY, SAND_HALF, SAND_FULL, WATER_HALF, WATER_FULL, CONCRETE, MAT, SAND,
 } from '../core/model.js';
 import { ALGORITHMS } from '../core/search.js';
@@ -23,26 +23,24 @@ const LEVEL_TEXT = ['0', '½', '1'];
 /** Plain-language account of one step: what moved and where its cost comes from. */
 function explainStep(step) {
   const a = model.actions[step.a];
-  const followed = step.events.filter((e) => e.chain).length;
+  const flowsAfter = step.events.filter((e) => e.kind === 'pour' || e.kind === 'out').length;
   const concrete = step.concrete ? ` Plus ${step.concrete * S.penalty} for ${step.concrete === 1 ? 'the box' : `${step.concrete} boxes`} that set into concrete.` : '';
   if (a.type === 'b') {
-    return step.concrete
-      ? `${a.label}: the full box spills half its content into the half box of the other material. Cost 1.${concrete}`
-      : `${a.label}: the full box levels with the empty one, leaving ½ and ½. Cost 1.`;
+    const base = step.concrete
+      ? `${a.label}: the full box spills half its content into the half box of the other material.`
+      : `${a.label}: the full box levels with the empty one, leaving ½ and ½.`;
+    const after = flowsAfter ? ` What moved then flows on through the open gates (${flowsAfter} flow${flowsAfter === 1 ? '' : 's'}).` : '';
+    return `${base}${after} Cost 1.${concrete}`;
   }
   const s = LEVEL_TEXT[step.s];
   const s2 = LEVEL_TEXT[step.s2];
-  const chain = followed
-    ? ` The box was full, so the door${followed === 1 ? '' : 's'} above ${followed === 1 ? 'was' : 'were'} pressed from both sides and ${followed} box${followed === 1 ? '' : 'es'} above followed at the same moment.`
-    : '';
-  return `${a.label}: upper box s = ${s} before, s′ = ${s2} after.${chain} Cost 1 + 4·(${s} + ${s2}) = ${1 + 2 * (step.s + step.s2)}.${concrete}`;
+  const stillOpen = (step.state.gates & (1 << a.cell)) !== 0;
+  const moved = flowsAfter === 0
+    ? ' Nothing moves yet (the box below is full), but the gate is now open.'
+    : flowsAfter === 1 ? '' : ` ${flowsAfter} flows happen at the same moment through the open gates.`;
+  const gate = stillOpen ? ' The gate stays open: there is still sand above it.' : ' The box above is empty, so the gate closes again.';
+  return `${a.label}: s = ${s} before, s′ = ${s2} after.${moved}${gate} Cost 1 + 4·(${s} + ${s2}) = ${1 + 2 * (step.s + step.s2)}.${concrete}`;
 }
-
-const CHAIN_HINTS = {
-  press: 'A door above opens only when it is pressed from both sides: sand on top of it and a full box under it. All opened doors act at the same moment.',
-  always: 'Every non-empty box of the unbroken pile above follows, whether the boxes under it are full or not.',
-  none: 'Only the two boxes joined by the opened gate ever change.',
-};
 
 const PRESETS = [
   { name: 'Assignment example (4×2)', grid: '1 0/0 1/0 1/1 0' },
@@ -57,7 +55,6 @@ const PRESETS = [
 const S = {
   rows: 5,
   water: false,
-  chain: 'press',
   penalty: 10,
   brush: SAND_FULL,
   start: null,
@@ -123,19 +120,19 @@ function cancelSearch() {
 
 // -------------------------------------------------------------------- state
 
-const current = () => (S.cursor ? S.steps[S.cursor - 1].cells : S.start);
-const modelCfg = () => ({ rows: S.rows, chain: S.chain, concretePenalty: S.penalty });
+const current = () => (S.cursor ? S.steps[S.cursor - 1].state : S.start);
+const modelCfg = () => ({ rows: S.rows, concretePenalty: S.penalty });
 
 function rebuildModel() {
   model = new Sandbox(modelCfg());
   board.setModel(model);
 }
 
-/** Replace the initial grid (and forget any timeline). */
-function setStart(cells) {
+/** Replace the initial state (and forget any timeline). */
+function setStart(state) {
   cancelSearch();
   generation++;
-  S.start = cells;
+  S.start = state.cells ? state : model.initial(state);
   S.steps = [];
   S.cursor = 0;
   S.playing = false;
@@ -156,19 +153,20 @@ function loadGrid(cells, variant = 'auto') {
   setStart(cells);
 }
 
-function availableFor(cells) {
+function availableFor(state) {
   const map = new Map();
   for (const a of model.actions) {
-    const r = model.apply(cells, a.id);
+    const r = model.apply(state, a.id);
     if (r) map.set(a.id, r.cost);
   }
   return map;
 }
 
 function refresh() {
-  const cells = current();
-  const avail = availableFor(cells);
-  board.show(cells);
+  const state = current();
+  const { cells } = state;
+  const avail = availableFor(state);
+  board.show(state);
   board.setAvailable(avail);
 
   const cost = S.steps.slice(0, S.cursor).reduce((s, x) => s + x.cost, 0);
@@ -180,7 +178,7 @@ function refresh() {
 
   const status = $('status');
   status.className = 'status';
-  if (model.isGoal(cells)) {
+  if (model.isGoal(state)) {
     status.textContent = S.cursor ? `Goal reached — no sand left. Total cost ${cost}.` : 'No sand in the grid: this is already a goal state.';
     status.classList.add('good');
   } else if (avail.size === 0) {
@@ -209,7 +207,7 @@ function refresh() {
   $('plNext').disabled = $('plLast').disabled = S.cursor >= S.steps.length;
   $('plPlay').disabled = S.steps.length === 0;
   $('plPlay').textContent = S.playing ? '⏸ Pause' : S.cursor >= S.steps.length && S.steps.length ? '↺ Replay' : '▶ Play';
-  if (document.activeElement !== $('gridText')) $('gridText').value = formatGrid(S.start, ' / ');
+  if (document.activeElement !== $('gridText')) $('gridText').value = formatGrid(S.start.cells, ' / ');
 }
 
 function renderTimeline() {
@@ -253,7 +251,7 @@ function renderTimeline() {
 function makeStep(before, id) {
   const events = [];
   const r = model.apply(before, id, events);
-  return r ? { a: id, cost: r.cost, cells: r.cells, events, before, concrete: r.concrete, s: r.s, s2: r.s2 } : null;
+  return r ? { a: id, cost: r.cost, state: r.state, events, before, concrete: r.concrete, s: r.s, s2: r.s2 } : null;
 }
 
 async function manualAction(id) {
@@ -275,7 +273,7 @@ async function forward() {
   const step = S.steps[S.cursor];
   const mine = generation;
   board.setAvailable(new Map());
-  const ok = await board.animate(step.before, step.events, S.speed);
+  const ok = await board.animate(step.before, step.events, step.state, step.a, S.speed);
   if (mine !== generation) return false;
   if (!ok) return false;
   S.cursor++;
@@ -310,12 +308,12 @@ function loadPath(path, source) {
   S.cursor = 0;
   S.playing = false;
   S.source = source;
-  let cells = S.start;
+  let state = S.start;
   for (const id of path) {
-    const step = makeStep(cells, id);
+    const step = makeStep(state, id);
     if (!step) break;
     S.steps.push(step);
-    cells = step.cells;
+    state = step.state;
   }
   refresh();
 }
@@ -324,10 +322,10 @@ function loadPath(path, source) {
 
 function paint(i) {
   if (S.playing) return;
-  const cells = S.start.slice();
+  const cells = S.start.cells.slice();
   if (cells[i] === S.brush && S.cursor === 0 && !S.steps.length) return;
   cells[i] = S.brush;
-  setStart(cells);
+  setStart(model.initial(cells));
 }
 
 function randomGrid() {
@@ -335,10 +333,10 @@ function randomGrid() {
 }
 
 function setRows(rows) {
-  rows = Math.max(1, Math.min(8, rows));
+  rows = Math.max(1, Math.min(MAX_ROWS, rows));
   if (rows === S.rows) return;
   const cells = new Uint8Array(rows * 2);
-  cells.set(S.start.subarray(0, Math.min(S.start.length, cells.length)));
+  cells.set(S.start.cells.subarray(0, Math.min(S.start.cells.length, cells.length)));
   S.rows = rows;
   syncSetupControls();
   rebuildModel();
@@ -350,7 +348,7 @@ function setVariant(water) {
   S.water = water;
   if (!water && S.brush >= WATER_HALF) S.brush = SAND_FULL;
   syncSetupControls();
-  setStart(water ? S.start.slice() : S.start.map((c) => (c >= WATER_HALF ? EMPTY : c)));
+  setStart(model.initial(water ? S.start.cells : S.start.cells.map((c) => (c >= WATER_HALF ? EMPTY : c))));
 }
 
 // ---------------------------------------------------------- setup controls
@@ -365,7 +363,7 @@ function swatch(code) {
 function syncSetupControls() {
   $('rowsOut').textContent = S.rows;
   const states = (S.water ? 6 : 3) ** (S.rows * 2);
-  $('spaceHint').textContent = `${S.rows}×2 · ${states < 1e7 ? fmtInt(states) : states.toExponential(1)} states`;
+  $('spaceHint').textContent = `${S.rows}×2 · ${states < 1e7 ? fmtInt(states) : states.toExponential(1)} initial states`;
   for (const b of $('variant').children) b.classList.toggle('on', (b.dataset.v === 'water') === S.water);
   $('penaltyField').hidden = !S.water;
 
@@ -447,7 +445,7 @@ async function solve(autoplay = true) {
   S.searching = true;
   setBusy(true);
   try {
-    const res = await rpc('solve', { cfg: modelCfg(), cells: Array.from(S.start), algo, heuristic });
+    const res = await rpc('solve', { cfg: modelCfg(), cells: Array.from(S.start.cells), algo, heuristic });
     if (mine !== generation) return;
     showResult(label, res.result, res.optimum, res.unsolvable);
     loadPath(res.result.path, label);
@@ -472,7 +470,7 @@ async function compare() {
   S.searching = true;
   setBusy(true, 'Comparing…');
   try {
-    const { results } = await rpc('compare', { cfg: modelCfg(), cells: Array.from(S.start) });
+    const { results } = await rpc('compare', { cfg: modelCfg(), cells: Array.from(S.start.cells) });
     if (mine !== generation) return;
     const exact = results.filter((r) => r.found && ALGORITHMS[r.algo].optimal).map((r) => r.cost);
     const optimum = exact.length ? Math.min(...exact) : null;
@@ -571,7 +569,7 @@ function gridToParam(cells) {
 }
 function paramToGrid(text) {
   const cells = parseGrid(text.replaceAll('_', '/').replaceAll('-', ' '));
-  if (cells.length < 2 || cells.length > 16) throw new RangeError('use between 1 and 8 rows');
+  if (cells.length < 2 || cells.length > MAX_ROWS * 2) throw new RangeError(`use between 1 and ${MAX_ROWS} rows`);
   return cells;
 }
 
@@ -595,14 +593,6 @@ function init() {
   $('algo').addEventListener('change', () => syncHeuristic(true));
   $('heur').addEventListener('change', () => syncHeuristic());
 
-  for (const [id, label] of Object.entries(CHAIN_MODES)) $('chain').append(el('option', { value: id, textContent: label }));
-  $('chainHint').textContent = CHAIN_HINTS[S.chain];
-  $('chain').addEventListener('change', () => {
-    S.chain = $('chain').value;
-    $('chainHint').textContent = CHAIN_HINTS[S.chain];
-    rebuildModel();
-    setStart(S.start);
-  });
   $('penalty').addEventListener('change', () => {
     S.penalty = Math.max(0, Number($('penalty').value) || 0);
     rebuildModel();
@@ -621,12 +611,12 @@ function init() {
   $('rowsMinus').addEventListener('click', () => setRows(S.rows - 1));
   $('rowsPlus').addEventListener('click', () => setRows(S.rows + 1));
   $('btnRandom').addEventListener('click', randomGrid);
-  $('btnClear').addEventListener('click', () => setStart(model.empty()));
+  $('btnClear').addEventListener('click', () => setStart(model.initial(model.empty())));
 
   const loadText = () => {
     try {
       const cells = parseGrid($('gridText').value);
-      if (cells.length < 2 || cells.length > 16) throw new RangeError('use between 1 and 8 rows');
+      if (cells.length < 2 || cells.length > MAX_ROWS * 2) throw new RangeError(`use between 1 and ${MAX_ROWS} rows`);
       $('gridText').blur();
       loadGrid(cells, S.water ? 'water' : 'auto');
     } catch (err) {
@@ -640,7 +630,7 @@ function init() {
   $('btnCopyLink').addEventListener('click', async () => {
     const url = new URL(location.href);
     url.hash = '';
-    url.search = `?g=${gridToParam(S.start)}`;
+    url.search = `?g=${gridToParam(S.start.cells)}`;
     const b = $('btnCopyLink');
     try {
       await navigator.clipboard.writeText(url.href);

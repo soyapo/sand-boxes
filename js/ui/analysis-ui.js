@@ -1,7 +1,7 @@
 // Analysis tab: loads the precomputed datasets (or runs a new batch in web workers) and draws
 // the histogram, the two scatter plots and the time / memory comparison.
 
-import { Sandbox, CHAIN_MODES, formatGrid } from '../core/model.js';
+import { Sandbox, formatGrid } from '../core/model.js';
 import { HEURISTICS } from '../core/heuristics.js';
 import { createRunner, createCollector } from '../core/analysis.js';
 import { columns, bubbles, dotPlot, lines, fmt } from './charts.js';
@@ -86,7 +86,7 @@ function picker(label, options, value, onChange) {
 
 function render(data) {
   const { meta, optimal, algos } = data;
-  const model = new Sandbox({ rows: meta.rows, chain: meta.chain, concretePenalty: meta.concretePenalty ?? 10 });
+  const model = new Sandbox({ rows: meta.rows, concretePenalty: meta.concretePenalty ?? 10 });
   const byKey = Object.fromEntries(algos.map((a) => [a.key, a]));
   const inexact = algos.filter((a) => !a.guaranteesOptimal);
   if (!byKey[view.algo] || byKey[view.algo].guaranteesOptimal) view.algo = 'greedy';
@@ -97,7 +97,7 @@ function render(data) {
   const what = meta.kind === 'exhaustive' ? `All ${int(meta.count)} initial states of the ${meta.rows}×2 sand grid`
     : meta.kind === 'sample' ? `${int(meta.count)} states sampled uniformly from the ${int(meta.stateSpace)} of the ${meta.rows}×2 sand grid (seed ${meta.seed})`
     : `${int(meta.count)} random ${meta.rows}×2 instances${meta.variant === 'water' ? ' with water' : ''} (seed ${meta.seed})`;
-  $('datasetMeta').textContent = `${what}. Door rule: ${CHAIN_MODES[meta.chain].toLowerCase()}. Computed in ${fmt(meta.wallSeconds)} s on ${meta.workers} worker${meta.workers === 1 ? '' : 's'} — ${meta.cpu ? `${meta.cpu}, ` : ''}${meta.environment}.`;
+  $('datasetMeta').textContent = `${what}. Computed in ${fmt(meta.wallSeconds)} s on ${meta.workers} worker${meta.workers === 1 ? '' : 's'} — ${meta.cpu ? `${meta.cpu}, ` : ''}${meta.environment}.`;
 
   const body = $('analysisBody');
   body.replaceChildren();
@@ -144,9 +144,9 @@ function render(data) {
 
   const open = (key, algoKey) => {
     const v = byKey[algoKey];
-    hooks.openInSimulator({ cells: model.decode(key), algo: v ? v.algo : 'astar', heuristic: v?.heuristic || undefined });
+    hooks.openInSimulator({ cells: model.decode(key).cells, algo: v ? v.algo : 'astar', heuristic: v?.heuristic || undefined });
   };
-  const gridText = (key) => formatGrid(model.decode(key), ' / ');
+  const gridText = (key) => formatGrid(model.decode(key).cells, ' / ');
 
   const sc1 = chartCard(isGreedy ? 'Cost by greedy solution against the optimum' : `Cost by ${name} against the optimum`, 'Each circle is a (cost, optimum) pair; its area is the number of instances there. Click one to open an example.', { controls: [algoPick()] });
   grid.append(sc1.card);
@@ -274,10 +274,9 @@ function render(data) {
 // ---------------------------------------------------------------- live run
 
 function setupLiveControls() {
-  for (const [id, label] of Object.entries(CHAIN_MODES)) $('liveChain').append(el('option', { value: id, textContent: label }));
   const sync = () => {
     const kind = $('liveKind').value;
-    const rows = kind === 'exhaustive' ? [2, 3, 4, 5] : [2, 3, 4, 5, 6];
+    const rows = kind === 'exhaustive' ? [2, 3, 4, 5] : [2, 3, 4, 5, 6, 7];
     const prevRows = Number($('liveRows').value) || 5;
     $('liveRows').replaceChildren(...rows.map((r) => el('option', { value: r, textContent: `${r} × 2` })));
     $('liveRows').value = rows.includes(prevRows) ? prevRows : 5;
@@ -304,7 +303,6 @@ function runLive() {
   const cfg = {
     kind: kind === 'exhaustive' ? 'exhaustive' : 'random',
     rows: Number($('liveRows').value),
-    chain: $('liveChain').value,
     seed: Math.max(1, Number($('liveSeed').value) || 1),
   };
   const n = Number($('liveCount').value);
@@ -335,7 +333,7 @@ function runLive() {
     stopLive(`Finished ${int(ids.length)} instances in ${((performance.now() - t0) / 1000).toFixed(1)} s.`);
     const id = `live-${Date.now()}`;
     const what = cfg.kind === 'exhaustive' ? (cfg.sample ? `sample of ${int(ids.length)}` : `all ${int(ids.length)} states`) : `${int(ids.length)} random${cfg.water ? ' with water' : ''}`;
-    addDataset(id, `Live run — ${cfg.rows}×2, ${what}, ${CHAIN_MODES[cfg.chain].toLowerCase()}`, { data });
+    addDataset(id, `Live run — ${cfg.rows}×2, ${what}`, { data });
     select(id);
   };
 

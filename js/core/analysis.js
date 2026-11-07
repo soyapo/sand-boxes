@@ -30,88 +30,90 @@ export const VARIANTS = Object.freeze([
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
-// ------------------------------------------------------- exhaustive tables
+// -------------------------------------------------------- the whole state graph
 
 /**
- * Transition table over all 3^(2·rows) sand-only states. State index = base-3 number of the
- * cell levels, so index 0 is the empty grid (the only goal).
+ * Every state reachable from any of the 3^(2·rows) sand-only initial states (every gate closed),
+ * with its successors. For the 5×2 grid that is 326,041 states and 2.3 million edges. Index 0..N0-1
+ * are the initial states in base-3 order of their cell levels.
  */
-export function buildTable(model) {
+export function buildGraph(model) {
   const size = model.size;
-  const N = 3 ** size;
-  const A = model.actions.length;
-  const next = new Int32Array(N * A).fill(-1);
-  const cost = new Uint8Array(N * A);
-  const succ = new Array(N);
-  const cells = new Uint8Array(size);
-  const indexOf = (c) => {
-    let x = 0;
-    for (let k = size - 1; k >= 0; k--) x = x * 3 + c[k];
-    return x;
+  const N0 = 3 ** size;
+  const index = new Map();
+  const keys = [];
+  const queue = [];
+  const add = (key) => {
+    let i = index.get(key);
+    if (i === undefined) {
+      i = keys.length;
+      index.set(key, i);
+      keys.push(key);
+      queue.push(i);
+    }
+    return i;
   };
-  for (let i = 0; i < N; i++) {
-    for (let k = 0, x = i; k < size; k++) { cells[k] = x % 3; x = (x - cells[k]) / 3; }
+  const cells = new Uint8Array(size);
+  for (let n = 0; n < N0; n++) {
+    for (let k = 0, x = n; k < size; k++) { cells[k] = x % 3; x = (x - cells[k]) / 3; }
+    add(model.encode(model.initial(cells)));
+  }
+  const succ = [];
+  const goal = [];
+  while (queue.length) {
+    const i = queue.pop();
+    const st = model.decode(keys[i]);
     const list = [];
-    for (let a = 0; a < A; a++) {
-      const r = model.apply(cells, a);
-      if (!r) continue;
-      const t = indexOf(r.cells);
-      next[i * A + a] = t;
-      cost[i * A + a] = r.cost;
-      list.push({ a, s: t, c: r.cost });
+    for (let a = 0; a < model.actions.length; a++) {
+      const r = model.apply(st, a);
+      if (r) list.push({ a, s: add(model.encode(r.state)), c: r.cost });
     }
     succ[i] = list;
+    goal[i] = model.isGoal(st);
   }
-  const cellsOf = (i) => {
-    const c = new Uint8Array(size);
-    for (let k = 0; k < size; k++) { c[k] = i % 3; i = (i - c[k]) / 3; }
-    return c;
-  };
-  return { model, N, A, next, cost, succ, cellsOf, indexOf };
+  return { model, N: keys.length, N0, keys, succ, goal: Uint8Array.from(goal), stateOf: (i) => model.decode(keys[i]) };
 }
 
 /**
- * Optimal cost-to-go for every state by value iteration (the state graph is acyclic: sand only
- * moves down or levels out). Among equally cheap solutions the one with the fewest actions is
- * kept, then the one with the fewest side gates.
+ * Optimal cost-to-go for every state of the graph by value iteration (the graph is acyclic: sand
+ * only moves down, levels out or sets, and gates close only when sand has left). Among equally
+ * cheap solutions the one with the fewest actions is kept, then the one with the fewest side gates.
  */
-export function solveTable(table) {
-  const { N, A, next, cost, model } = table;
+export function solveGraph(graph) {
+  const { N, succ, goal, model } = graph;
   const INF = 1e9;
   const opt = new Int32Array(N).fill(INF);
   const steps = new Int16Array(N);
   const sides = new Int16Array(N);
-  const act = new Int8Array(N).fill(-1);
-  opt[0] = 0;
+  for (let i = 0; i < N; i++) if (goal[i]) opt[i] = 0;
   for (let changed = true; changed;) {
     changed = false;
-    for (let i = 1; i < N; i++) {
+    for (let i = 0; i < N; i++) {
+      if (goal[i]) continue;
       let bc = opt[i];
       let bs = steps[i];
       let bb = sides[i];
-      let ba = act[i];
-      for (let a = 0; a < A; a++) {
-        const t = next[i * A + a];
-        if (t < 0 || opt[t] === INF) continue;
-        const c = opt[t] + cost[i * A + a];
-        const s = steps[t] + 1;
-        const b = sides[t] + (model.actions[a].type === 'b' ? 1 : 0);
-        if (c < bc || (c === bc && (s < bs || (s === bs && b < bb)))) { bc = c; bs = s; bb = b; ba = a; }
+      for (const e of succ[i]) {
+        if (opt[e.s] === INF) continue;
+        const c = opt[e.s] + e.c;
+        const st = steps[e.s] + 1;
+        const b = sides[e.s] + (model.actions[e.a].type === 'b' ? 1 : 0);
+        if (c < bc || (c === bc && (st < bs || (st === bs && b < bb)))) { bc = c; bs = st; bb = b; }
       }
       if (bc !== opt[i] || bs !== steps[i] || bb !== sides[i]) {
-        opt[i] = bc; steps[i] = bs; sides[i] = bb; act[i] = ba;
+        opt[i] = bc; steps[i] = bs; sides[i] = bb;
         changed = true;
       }
     }
   }
-  return { opt, steps, sides, act };
+  return { opt, steps, sides };
 }
 
-function tableHeuristics(table) {
+function graphHeuristics(graph) {
   const hs = {};
   for (const [name, h] of Object.entries(HEURISTICS)) {
-    const arr = new Float64Array(table.N);
-    for (let i = 0; i < table.N; i++) arr[i] = h.fn(table.model, table.cellsOf(i));
+    const arr = new Float64Array(graph.N);
+    for (let i = 0; i < graph.N; i++) arr[i] = h.fn(graph.model, graph.stateOf(i));
     hs[name] = arr;
   }
   return hs;
@@ -290,54 +292,54 @@ function slim(model, r) {
  * one result per variant. Because records are plain data, several workers can each own a runner
  * and a single Collector can merge what they send back.
  *
- * cfg.kind = 'exhaustive': sand-only, every state of a rows×2 grid (59,049 for 5 rows), or
- *            `sample` states drawn uniformly from it. Optima come from the solved table.
+ * cfg.kind = 'exhaustive': sand-only, every initial state of a rows×2 grid (59,049 for 5 rows), or
+ *            `sample` of them drawn uniformly. Optima come from value iteration over the whole
+ *            reachable state graph.
  * cfg.kind = 'random':     `count` random instances of any size, optionally with water. The optimum
  *            of each instance is taken from the exact algorithms (UCS, A*, IDA*).
  */
 export function createRunner(cfg = {}) {
   const kind = cfg.kind === 'random' ? 'random' : 'exhaustive';
   const rows = cfg.rows ?? 5;
-  const chain = cfg.chain ?? 'press';
   const seed = cfg.seed ?? 1;
 
   if (kind === 'exhaustive') {
     const maxExpanded = cfg.maxExpanded ?? 2_000_000;
-    const model = new Sandbox({ rows, chain });
-    const N = 3 ** model.size;
-    const sampled = cfg.sample > 0 && cfg.sample < N;
+    const model = new Sandbox({ rows, concretePenalty: 10 });
+    const N0 = 3 ** model.size;
+    const sampled = cfg.sample > 0 && cfg.sample < N0;
     let ids;
     if (sampled) {
       const rng = seededRng(seed);
       const pick = new Set();
-      while (pick.size < cfg.sample) pick.add(Math.floor(rng() * N));
+      while (pick.size < cfg.sample) pick.add(Math.floor(rng() * N0));
       ids = [...pick].sort((a, b) => a - b);
     } else {
-      ids = Array.from({ length: N }, (_, i) => i);
+      ids = Array.from({ length: N0 }, (_, i) => i);
     }
     let ctx = null; // built lazily: the coordinator only needs ids and meta
     const prepare = () => {
-      const table = buildTable(model);
-      const solved = solveTable(table);
-      const hs = tableHeuristics(table);
-      const isGoal = (s) => s === 0;
-      const succOf = (s) => table.succ[s];
+      const graph = buildGraph(model);
+      const solved = solveGraph(graph);
+      const hs = graphHeuristics(graph);
+      const isGoal = (s) => graph.goal[s] === 1;
+      const succOf = (s) => graph.succ[s];
       const zero = () => 0;
-      const cellsOf = (s) => table.cellsOf(s);
+      const cellsOf = (s) => graph.stateOf(s).cells;
       const problems = VARIANTS.map((v) => ({ start: 0, actions: model.actions, isGoal, succ: succOf, cells: cellsOf, h: v.h ? ((arr) => (s) => arr[s])(hs[v.h]) : zero }));
-      return { table, solved, problems };
+      return { graph, solved, problems };
     };
     return {
       ids,
-      meta: { kind: sampled ? 'sample' : 'exhaustive', variant: 'sand', rows, chain, stateSpace: N, seed: sampled ? seed : null },
+      meta: { kind: sampled ? 'sample' : 'exhaustive', variant: 'sand', rows, stateSpace: N0, seed: sampled ? seed : null },
       run(i) {
         ctx ??= prepare();
         const runs = VARIANTS.map((v, k) => {
           const p = ctx.problems[k];
-          p.start = i;
+          p.start = i; // initial state i has graph index i
           return slim(model, search(v.algo, p, { maxExpanded: Math.min(maxExpanded, v.maxExpanded ?? Infinity) }));
         });
-        return { key: model.encode(ctx.table.cellsOf(i)), opt: ctx.solved.opt[i], steps: ctx.solved.steps[i], sides: ctx.solved.sides[i], runs };
+        return { key: ctx.graph.keys[i], opt: ctx.solved.opt[i], steps: ctx.solved.steps[i], sides: ctx.solved.sides[i], runs };
       },
     };
   }
@@ -347,14 +349,14 @@ export function createRunner(cfg = {}) {
   const probs = cfg.probs || (water ? PROBS_WATER : PROBS_SAND);
   const count = cfg.count ?? 500;
   const maxExpanded = cfg.maxExpanded ?? 300_000;
-  const model = new Sandbox({ rows, chain, concretePenalty });
+  const model = new Sandbox({ rows, concretePenalty });
   const exactIndexes = VARIANTS.map((v, k) => k).filter((k) => ALGORITHMS[VARIANTS[k].algo].optimal && HEURISTICS[VARIANTS[k].h || 'zero'].admissible);
   return {
     ids: Array.from({ length: count }, (_, i) => i),
-    meta: { kind: 'random', variant: water ? 'water' : 'sand', rows, chain, probs, concretePenalty, seed, maxExpanded, stateSpace: (water ? 6 : 3) ** (rows * 2) },
+    meta: { kind: 'random', variant: water ? 'water' : 'sand', rows, probs, concretePenalty, seed, maxExpanded, stateSpace: (water ? 6 : 3) ** (rows * 2) },
     run(i) {
       const cells = model.random(probs, seededRng(Math.imul(seed, 0x9e3779b1) + i));
-      const base = makeProblem(model, cells, 'gap');
+      const base = makeProblem(model, model.initial(cells), 'gap');
       base.warm(maxExpanded);
       const runs = VARIANTS.map((v) => slim(model, search(v.algo, base.using(v.h || 'zero'), { maxExpanded: Math.min(maxExpanded, v.maxExpanded ?? Infinity) })));
       // Reference optimum: any exact algorithm that finished (one of them may hit the expansion limit).

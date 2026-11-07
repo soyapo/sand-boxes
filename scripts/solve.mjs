@@ -8,9 +8,9 @@
 //   node scripts/solve.mjs --random --rows 5 --seed 3 [--water]
 //
 // Cells: 0 empty, ½ (or .5) half sand, 1 full sand, w half water, W full water, # concrete.
-// Options: --chain press|always|none   --penalty 10   --quiet
+// Options: --penalty 10   --quiet
 
-import { Sandbox, parseGrid, formatGrid, seededRng, PROBS_SAND, PROBS_WATER, PROFESSOR_EXAMPLE } from '../js/core/model.js';
+import { Sandbox, parseGrid, formatGrid, formatState, seededRng, PROBS_SAND, PROBS_WATER, PROFESSOR_EXAMPLE } from '../js/core/model.js';
 import { search, ALGORITHMS } from '../js/core/search.js';
 import { makeProblem, describePath } from '../js/core/problem.js';
 import { HEURISTICS } from '../js/core/heuristics.js';
@@ -33,12 +33,13 @@ if (opt.random) {
 } else {
   cells = parseGrid(gridText || PROFESSOR_EXAMPLE);
 }
-const model = new Sandbox({ rows: cells.length / 2, chain: opt.chain || 'press', concretePenalty: opt.penalty !== undefined ? Number(opt.penalty) : 10 });
+const model = new Sandbox({ rows: cells.length / 2, concretePenalty: opt.penalty !== undefined ? Number(opt.penalty) : 10 });
+const start = model.initial(cells);
 
-console.log(`Start (${model.rows}×2, door rule: ${model.chain}):\n${formatGrid(cells)}\n`);
+console.log(`Start (${model.rows}×2):\n${formatGrid(cells)}\n`);
 
 if (opt.all) {
-  const base = makeProblem(model, cells, 'gap');
+  const base = makeProblem(model, start, 'gap');
   base.warm();
   const rows = VARIANTS.map((v) => {
     const r = search(v.algo, base.using(v.h || 'zero'));
@@ -54,18 +55,18 @@ if (opt.all) {
   const h = opt.h || (algo === 'gbfs' ? 'fall' : 'gap');
   if (!ALGORITHMS[algo]) throw new Error(`unknown algorithm "${algo}" (one of ${Object.keys(ALGORITHMS).join(', ')})`);
   if (!HEURISTICS[h]) throw new Error(`unknown heuristic "${h}" (one of ${Object.keys(HEURISTICS).join(', ')})`);
-  const r = search(algo, makeProblem(model, cells, h));
+  const r = search(algo, makeProblem(model, start, h));
   if (!r.found) {
     console.log(r.aborted ? 'Search stopped at the expansion limit.' : 'No solution: some sand is trapped.');
   } else {
-    let state = cells;
+    let state = start;
     let total = 0;
     r.path.forEach((e, k) => {
       const res = model.apply(state, e.a);
-      state = res.cells;
+      state = res.state;
       total += e.c;
       console.log(`${String(k + 1).padStart(2)}. [${model.actions[e.a].type}] ${model.actions[e.a].label.padEnd(24)} cost ${String(e.c).padStart(2)}   total ${total}`);
-      if (!opt.quiet) console.log(formatGrid(state).replace(/^/gm, '      ') + '\n');
+      if (!opt.quiet) console.log(formatState(model, state).replace(/^/gm, '      ') + '\n');
     });
     const d = describePath(model, r.path);
     console.log(`\n${ALGORITHMS[algo].long}${ALGORITHMS[algo].informed ? ` with heuristic "${HEURISTICS[h].name}"` : ''}`);

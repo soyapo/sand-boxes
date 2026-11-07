@@ -26,7 +26,7 @@ export class Board {
     this.tip = tip;
     this.handlers = handlers;
     this.model = null;
-    this.cells = null;
+    this.state = null;
     this.available = new Map();
     this.hover = null;
     this.highlight = null;
@@ -133,10 +133,10 @@ export class Board {
     });
   }
 
-  /** Show a state without animation. */
-  show(cells) {
+  /** Show a state ({ cells, gates }) without animation. */
+  show(state) {
     this.cancel();
-    this.cells = cells;
+    this.state = state;
     this.draw();
   }
 
@@ -157,26 +157,25 @@ export class Board {
   }
 
   /**
-   * Animate one action. Every door it opens (the gate itself and the doors above that are pressed
-   * from both sides) opens at the same moment, and all the material falls together.
+   * Animate one action: the gate opens, everything that flows through the open gates moves at the
+   * same moment, then the gates with nothing left above them close.
    * @returns {Promise<boolean>} false if the animation was cancelled
    */
-  async animate(before, events, speed = 1) {
+  async animate(before, events, final, actionId, speed = 1) {
     const my = ++this.animToken;
     this.busy = true;
-    const final = events.length ? events[events.length - 1].cells : before;
     if (reducedMotion() || !events.length) {
       await this.#tween(160 / speed, my, () => {});
     } else {
-      const flows = events.map((ev) => ({ ev, gate: this.#gateOf(ev) }));
-      const base = { flows, prev: before, final };
-      await this.#tween(130 / speed, my, (t) => this.draw(before, { ...base, open: ease(t), flow: 0 }));
-      await this.#tween(520 / speed, my, (t) => this.draw(before, { ...base, open: 1, flow: t }));
-      await this.#tween(110 / speed, my, (t) => this.draw(final, { ...base, open: 1 - ease(t), flow: 1 }));
+      const flows = events.filter((ev) => ev.kind !== 'open').map((ev) => ({ ev, gate: this.#gateOf(ev) }));
+      const base = { flows, prev: before, final, action: actionId };
+      await this.#tween(130 / speed, my, (t) => this.draw(before, { ...base, open: ease(t), flow: 0, closing: 0 }));
+      await this.#tween(flows.length ? 520 / speed : 200 / speed, my, (t) => this.draw(before, { ...base, open: 1, flow: t, closing: 0 }));
+      await this.#tween(110 / speed, my, (t) => this.draw(final, { ...base, open: 1, flow: 1, closing: ease(t) }));
     }
     if (my !== this.animToken) return false;
     this.busy = false;
-    this.cells = final;
+    this.state = final;
     this.draw();
     return true;
   }
@@ -201,8 +200,9 @@ export class Board {
 
   // ------------------------------------------------------------------ drawing
 
-  draw(cells = this.cells, overlay = null) {
-    if (!cells || !this.geo) return;
+  draw(state = this.state, overlay = null) {
+    if (!state || !this.geo) return;
+    const { cells } = state;
     const { ctx, geo, colors } = this;
     const { wall, padX, padT, cellW, cellH, rows, W, H } = geo;
     const now = performance.now();
@@ -223,8 +223,8 @@ export class Board {
       ctx.beginPath();
       ctx.rect(rect.x, rect.y, rect.w, rect.h);
       ctx.clip();
-      const was = overlay ? overlay.prev[i] : cells[i];
-      const will = overlay ? overlay.final[i] : cells[i];
+      const was = overlay ? overlay.prev.cells[i] : cells[i];
+      const will = overlay ? overlay.final.cells[i] : cells[i];
       if (overlay && was !== will) {
         const t = ease(overlay.flow);
         if (will === CONCRETE) {
@@ -245,11 +245,23 @@ export class Board {
       this.#levelLabel(rect, overlay && was !== will && overlay.flow < 1 ? was : cells[i]);
     }
 
-    // gates
-    const opened = new Map();
-    if (overlay) for (const f of overlay.flows) opened.set(f.gate, f.ev.kind === 'side' ? (f.ev.to > f.ev.from ? 1 : -1) : 1);
+    // gates: top-down gates stay open while there is material above them
     for (let id = 0; id < this.gateRects.length; id++) {
-      this.#gate(id, opened.has(id) ? overlay.open : 0, opened.get(id) || 1);
+      const act = this.model.actions[id];
+      let open = 0;
+      let dir = 1;
+      if (act.type === 'a') {
+        const wasOpen = (overlay ? overlay.prev : state).gates & (1 << act.cell);
+        const willOpen = (overlay ? overlay.final : state).gates & (1 << act.cell);
+        if (!overlay) open = wasOpen ? 1 : 0;
+        else if (wasOpen) open = willOpen ? 1 : 1 - overlay.closing;
+        else if (id === overlay.action) open = willOpen ? overlay.open : overlay.open * (1 - overlay.closing);
+      } else if (overlay && id === overlay.action) {
+        const side = overlay.flows.find((f) => f.ev.kind === 'side');
+        dir = side && side.ev.to < side.ev.from ? -1 : 1;
+        open = overlay.open * (1 - overlay.closing);
+      }
+      this.#gate(id, open, dir);
     }
 
     // row numbers and outlet marks
@@ -406,7 +418,7 @@ export class Board {
         const dir = ev.to > ev.from ? 1 : -1;
         const dest = this.cellRects[ev.to];
         const y0 = g.y + g.h / 2 + jitter * g.h * 0.5;
-        const floor = dest.y + dest.h - (LEVEL[overlay.prev[ev.to]] / 2) * dest.h;
+        const floor = dest.y + dest.h - (LEVEL[overlay.prev.cells[ev.to]] / 2) * dest.h;
         x = g.x + g.w / 2 + dir * u * geo.cellW * 0.42;
         y = y0 + u * u * Math.max(0, floor - y0);
       } else {
@@ -415,7 +427,7 @@ export class Board {
         if (ev.to < 0) y1 = g.y + geo.wall + geo.tray;
         else {
           const dest = this.cellRects[ev.to];
-          y1 = dest.y + dest.h - (LEVEL[overlay.prev[ev.to]] / 2) * dest.h;
+          y1 = dest.y + dest.h - (LEVEL[overlay.prev.cells[ev.to]] / 2) * dest.h;
         }
         x = g.x + g.w / 2 + jitter * g.w * 0.6;
         y = y0 + u * u * (y1 - y0);

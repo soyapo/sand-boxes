@@ -31,9 +31,9 @@ self.onmessage = (e) => {
   if (m.type === 'init' || m.type === 'run') { analysis(m); return; }
   try {
     const model = new Sandbox(m.cfg);
-    const cells = Uint8Array.from(m.cells);
+    const start = model.initial(Uint8Array.from(m.cells));
     if (m.type === 'solve') {
-      const base = makeProblem(model, cells, m.heuristic);
+      const base = makeProblem(model, start, m.heuristic);
       const r = search(m.algo, base, { maxExpanded: LIMIT });
       const algo = ALGORITHMS[m.algo];
       const exact = algo.optimal && (!algo.informed || HEURISTICS[m.heuristic].admissible);
@@ -45,7 +45,7 @@ self.onmessage = (e) => {
         unsolvable: !ref.found && !ref.aborted,
       });
     } else if (m.type === 'compare') {
-      const base = makeProblem(model, cells, 'gap');
+      const base = makeProblem(model, start, 'gap');
       base.warm(400_000);
       const results = VARIANTS.map((v) => ({
         key: v.key,

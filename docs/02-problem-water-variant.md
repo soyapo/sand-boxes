@@ -23,8 +23,8 @@ That one addition changes the character of the problem:
 
 | Element | Definition |
 |---|---|
-| **State** | 2n boxes, each one of six values: empty, ½ sand, full sand, ½ water, full water, concrete. A box never holds sand and water at once. |
-| **State space** | 6^(2n): about 6.0 · 10⁷ for the 5×2 grid. |
+| **State** | 2n boxes, each one of six values: empty, ½ sand, full sand, ½ water, full water, concrete, plus the set of open top-down gates. A box never holds sand and water at once. |
+| **State space** | 6^(2n) cell configurations (about 6.0 · 10⁷ for the 5×2 grid) times the gate bits. |
 | **Initial state** | Each box independently: empty 0.40, ½ sand 0.15, full sand 0.20, ½ water 0.10, full water 0.15 (adjustable). No concrete initially, although the simulator lets you place some. |
 | **Actions** | The same 3n gates. |
 | **Goal test** | No box contains sand. Water and concrete may remain. |
@@ -40,11 +40,11 @@ That one addition changes the character of the problem:
   **L becomes concrete**, U keeps the remainder.
 - L full: nothing moves, so nothing reacts.
 - Through an outlet, sand or water simply leaves. Concrete never leaves.
-- **Doors pressed from both sides** work as in the original problem, for sand and water alike:
-  when the gate under a *full* box is opened, the door on top of that box opens at the same moment
-  and the box above pours in, and so on up the pile through full boxes. If sand lands on water or
-  water on sand while everything falls, that box becomes concrete too (each one costs 10) and
-  blocks whatever is still above it. A concrete box never moves and never lets anything through.
+- **Spring gates** work as in the original problem, for sand and water alike: an open gate stays
+  open while sand *or water* is above it, and everything flows through the open gates at the same
+  moment. If sand lands on water or water on sand while flowing, that box becomes concrete too
+  (each one costs 10). A concrete box never moves and never lets anything through, and a gate under
+  a concrete box cannot be opened; a gate above one can, but it leads nowhere.
 
 ### Action b — side gate
 
@@ -88,12 +88,12 @@ Levelling the water across row 1 puts half a box of water above the sand; droppi
 sand into concrete. Goal reached: no sand is left. Remove the water from the start state and the
 instance has no solution — every algorithm reports that after exhausting the reachable states.
 
-**Mixed 5×2.** For `W 1 / 1 ½ / 0 w / ½ 0 / 1 0` the optimal plan costs 71 (17 actions, 4 side
+**Mixed 5×2.** For `W 1 / 1 ½ / 0 w / ½ 0 / 1 0` the optimal plan costs 52 (10 actions, 2 side
 gates) and makes concrete **exactly once, on purpose**: its last action drops the remaining half box
 of sand onto water (3 + 10) because that is cheaper than carrying it out. The greedy approach of
 the assignment cannot solve this instance at all: flushing straight down it lets sand and water
-meet, the column is sealed with concrete and the sand above it is stuck. Greedy best-first search
-and BFS both find plans of cost 75. All of them can be replayed from the *Rules* tab or with
+meet, the column is sealed with concrete and the sand above it is stuck. BFS finds a plan of cost
+75 and greedy best-first search one of 77. All of them can be replayed from the *Rules* tab or with
 
 ```bash
 node scripts/solve.mjs "W 1 / 1 ½ / 0 w / ½ 0 / 1 0" --all
@@ -106,11 +106,10 @@ node scripts/solve.mjs "W 1 / 1 ½ / 0 w / ½ 0 / 1 0" --all
   reachable states are exhausted.
 - **The greedy approach is no longer safe.** On sand-only grids the straight-down sweep always
   finishes. With water it can seal a column with concrete and get stuck: on the 1,000 random
-  instances of the report it fails on 302, although all of them are solvable.
-- **Heuristics.** h₁ (sand volume) stays admissible as long as the concrete penalty is at least 5:
-  a concrete box absorbs at most one unit of sand for at least 10, which is never cheaper than the
-  `4T + ⌈T⌉` charged for flushing. For smaller penalties the implementation falls back to
-  `T · min(5, penalty)`. The gate term of h₂ is no longer valid (sand above a box may be concreted
-  in place), so h₂ reduces to h₁ whenever water or concrete is present.
+  instances of the report it fails on 327, of which 312 are solvable.
+- **Heuristics.** h₁ (3 per column with sand) stays admissible: the column's sand still needs a
+  paid action of its own, either a gate opened under sand (≥ 3) or a flow that sets it into concrete
+  (≥ 10 + 1). The closed-gate count of h₂ is no longer valid (sand above a closed gate may be
+  concreted in place), so h₂ reduces to h₁ whenever water or concrete is present.
 - **The state space cannot be enumerated** (6¹⁰ ≈ 60 million for 5×2), so this variant is evaluated
   on 1,000 random instances instead; see the report.

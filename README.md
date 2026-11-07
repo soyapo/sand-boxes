@@ -9,7 +9,7 @@ hosted on GitHub Pages as is.
 
 **Live site:** <https://soyapo.github.io/sand-boxes/> · **Repository:** <https://github.com/soyapo/sand-boxes>
 
-![The simulator replaying the optimal plan for the assignment's example, with the cost of the current step explained](docs/screenshots/simulator.jpg)
+![The simulator replaying the optimal plan for the assignment's example: two gates in the right column are open, and the cost of the current step is explained](docs/screenshots/simulator.jpg)
 
 ![The Analysis tab: histogram of Greedy_opt_ratio and greedy cost against the optimum over all 59,049 states](docs/screenshots/analysis.jpg)
 
@@ -19,7 +19,7 @@ hosted on GitHub Pages as is.
 
 | | |
 |---|---|
-| **Simulator** | Any grid from 1×2 to 8×2. Paint boxes, generate random grids with the assignment's probabilities, open gates by hand and watch the sand fall and level. Every step is explained in words: the level of the upper box before and after (s, s′), which doors above were pressed open, and how that adds up to the cost. Grids can be shared as links, and the player works from the keyboard (Space, ← →, Home, End). |
+| **Simulator** | Any grid from 1×2 to 7×2. Paint boxes, generate random grids with the assignment's probabilities, open gates by hand and watch the sand fall through them. Open gates are drawn open. Every step is explained in words: the level of the upper box before and after (s, s′), what flowed, whether the gate stayed open, and how that adds up to the cost. Grids can be shared as links, and the player works from the keyboard (Space, ← →, Home, End). |
 | **Solver** | The greedy approach of the assignment (straight-down sweep, no side gates), the four main searches (BFS, DFS, IDS, UCS) and the informed ones (A*, RBFS, IDA*, Weighted A*, greedy best-first) with heuristics designed for this problem. The solution is animated step by step with its cost; "Compare all" runs everything on the same grid. |
 | **Analysis** | For all 3¹⁰ = 59,049 initial states: histogram of `Greedy_opt_ratio`, scatter of greedy cost against the optimum, scatter of actions against side-gate actions, time and memory of every algorithm, and a check of the claim that the greedy approach is optimal when every gate costs one unit. Click any point to open an example in the simulator. New analyses can be run in the browser. |
 | **Water variant** | The proposed extension: water, concrete that blocks a box for good, +10 per concrete box, goal "no sand left". Same simulator, same solvers, benchmarked on 1,000 random instances. |
@@ -37,9 +37,9 @@ is a "vibe coding" exercise: the code was written with an AI coding assistant (C
 we directed, checked and corrected. The exported conversation is in [chats/](chats/), including
 the points where the model's first reading of the physics was wrong and we corrected it.
 
-What came from us rather than from the model: the statement of the problem; the door rule ("a door
-only opens when material presses on it from both sides, and everything falls at the same moment");
-the state-by-state trace showing that the assignment's side-gate plan costs 54 and not 45; the
+What came from us rather than from the model: the statement of the problem; the rule of the spring gates ("a gate stays open
+as long as there is sand above it, and everything falls at the same moment");
+the state-by-state trace of the assignment's side-gate plan that pinned down how the spring gates work; the
 definition of the greedy approach as it was explained in class; and the decision of what to
 measure. What the model did: the implementation, the heuristics and their proofs, the benchmark
 and the write-up, all of which we reviewed.
@@ -143,15 +143,14 @@ and in Node.
 
 ## The model in one paragraph
 
-A state is the level (0, ½, 1) of each of the 2n boxes. **Action a** opens the gate under a box:
-sand falls into the box below (or out, through an outlet) as far as it fits, and costs
-`1 + 4·(s + s′)` with `s`, `s′` the level of the upper box before and after. A door higher up
-opens by itself only when it is pressed from both sides — sand on top of it and a *full* box under
-it — so opening the gate under a full box lets the pile resting on it follow, through full boxes,
-all at the same moment. **Action b** opens a side gate: a full box and an empty one become two
-half boxes, cost 1. The goal is an empty grid.
+A state is the level (0, ½, 1) of each of the 2n boxes plus the set of open top-down gates.
+**Action a** opens the gate under a box that holds sand (even if the box below is full): the gate
+stays open as long as there is material above it and closes by itself when that box empties;
+everything that can flow through the open gates flows at the same moment. It costs
+`1 + 4·(s + s′)` with `s`, `s′` the level of the box above the gate before and after. **Action b**
+opens a side gate: a full box and an empty one become two half boxes, cost 1; the side gate closes
+at once. The goal is an empty grid.
 
-On the assignment's worked example this gives 47 for the greedy approach and 46 for the "other
-alternative", as printed. The side-gate plan printed as 45 actually costs 54 (one action of cost 9
-is missing from it), and the true optimum is 45 by a different plan; see
-[docs/01-problem-original.md](docs/01-problem-original.md).
+On the assignment's worked example this gives 47 for the greedy approach, 45 for the side-gate
+plan and 46 for the "other alternative", exactly as printed. The optimum found by search is 38;
+see [docs/01-problem-original.md](docs/01-problem-original.md).

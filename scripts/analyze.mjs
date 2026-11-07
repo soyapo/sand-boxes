@@ -6,7 +6,7 @@
 //   node scripts/analyze.mjs --rows 5 --sample 2000 --seed 7
 //   node scripts/analyze.mjs --random --water --rows 5 --count 1000
 //
-// Options: --chain press|always|none   --workers N   --out file.json   --penalty 10
+// Options: --workers N   --out file.json   --penalty 10
 
 import { Worker } from 'node:worker_threads';
 import { writeFileSync, mkdirSync } from 'node:fs';
@@ -100,7 +100,6 @@ if (args.rows || args.random) {
   const cfg = {
     kind: args.random ? 'random' : 'exhaustive',
     rows: Number(args.rows) || 5,
-    chain: args.chain || 'press',
     seed: Number(args.seed) || 1,
   };
   if (args.sample) cfg.sample = Number(args.sample);

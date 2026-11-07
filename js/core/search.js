@@ -5,7 +5,7 @@
 //   problem.succ(s)      array of { a: actionId, s: nextState, c: cost }
 //   problem.h(s)         heuristic estimate (only used by the informed algorithms)
 //   problem.actions      the model's action list   (only used by the greedy approach)
-//   problem.cells(s)     decoded cell array of s   (only used by the greedy approach)
+//   problem.cells(s)     the cell array of state s  (only used by the greedy approach)
 //
 // Every algorithm returns
 //   { found, aborted, cost, path: [{a, s, c}], expanded, generated, maxFrontier, maxMemory, iterations, timeMs }
@@ -82,9 +82,10 @@ function succeed(st, path) {
  *     below and do the same, down to the outlet.
  *   - Repeat such sweeps until the column holds no sand.
  *
- * A gate that would move nothing is not an action, so a "stuck" box is simply skipped. On sand-only
- * grids the procedure always finishes; with water it can get stuck behind concrete, in which case
- * it reports failure.
+ * Opening the gate under a box whose lower neighbour is full moves nothing yet, but the gate stays
+ * open and the sand follows later; a gate that is already open is skipped. On sand-only grids the
+ * procedure always finishes; with water it can get stuck behind concrete, in which case it reports
+ * failure.
  */
 function sweep(p, o) {
   const st = newStats();

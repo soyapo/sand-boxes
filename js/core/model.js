@@ -2,6 +2,9 @@
 //
 // The grid has `rows` rows and 2 columns. Cell index = row * 2 + col, row 0 is the top.
 // Every cell holds one of six codes. Levels are stored in half-units (0, 1, 2 = 0, 1/2, 1).
+//
+// A state is { cells, gates }: the cell codes plus a bit mask of the top-down gates that are
+// currently open (bit i = the gate under cell i; the gates under the bottom row are the outlets).
 
 export const EMPTY = 0;
 export const SAND_HALF = 1;
@@ -25,38 +28,26 @@ export const cellCode = (mat, level) => (level === 0 ? EMPTY : CODE[mat][level])
 
 export const CELL_NAMES = ['empty', '½ sand', 'full sand', '½ water', 'full water', 'concrete'];
 
-/**
- * Which doors above an opened top-down gate open by themselves.
- *  - press:  a spring door opens only when material presses on it from both sides, i.e. the box
- *            above it holds material and the box below it is FULL (touching the door from
- *            underneath). When the agent opens the gate under a full box, the door on top of that
- *            box therefore opens too, then the one above it if that box was full as well, and so
- *            on. All of them are open at the same moment and everything falls together.
- *            A half-full box does not touch the door above it, so nothing above it follows.
- *  - always: every non-empty box of the unbroken pile above follows, full or not.
- *  - none:   nothing moves except the two boxes joined by the opened gate.
- */
-export const CHAIN_MODES = Object.freeze({
-  press: 'Doors pressed from both sides (default)',
-  always: 'Whole pile always follows',
-  none: 'No chain reaction',
-});
+/** The most rows the simulator supports: a state must still fit in one JavaScript number. */
+export const MAX_ROWS = 7;
 
 /** Initial-state probabilities from the assignment (sand only) and a default mix with water. */
 export const PROBS_SAND = Object.freeze({ empty: 0.5, sandHalf: 0.2, sandFull: 0.3, waterHalf: 0, waterFull: 0 });
 export const PROBS_WATER = Object.freeze({ empty: 0.4, sandHalf: 0.15, sandFull: 0.2, waterHalf: 0.1, waterFull: 0.15 });
 
+/** Does the box hold something that can flow (sand or water)? */
+const flows = (code) => code !== EMPTY && code !== CONCRETE;
+
 export class Sandbox {
   /**
-   * @param {{rows?: number, chain?: 'press'|'always'|'none', concretePenalty?: number}} [opts]
+   * @param {{rows?: number, concretePenalty?: number}} [opts]
    */
-  constructor({ rows = 5, chain = 'press', concretePenalty = 10 } = {}) {
-    if (!(rows >= 1 && rows <= 12)) throw new RangeError('rows must be between 1 and 12');
-    if (!(chain in CHAIN_MODES)) throw new RangeError(`unknown chain mode: ${chain}`);
+  constructor({ rows = 5, concretePenalty = 10 } = {}) {
+    if (!(rows >= 1 && rows <= MAX_ROWS)) throw new RangeError(`rows must be between 1 and ${MAX_ROWS}`);
     this.rows = rows;
     this.size = rows * 2;
-    this.chain = chain;
     this.concretePenalty = concretePenalty;
+    this.gateSpace = 2 ** this.size; // number of possible gate masks
 
     /** Action list. Type 'b' = side gate of a row, type 'a' = top-down gate under a box. */
     this.actions = [];
@@ -72,6 +63,7 @@ export class Sandbox {
           type: 'a',
           col: c,
           row: r,
+          cell: r * 2 + c,
           outlet,
           label: outlet ? `${side} outlet (row ${r + 1})` : `${side} gate ${r + 1}→${r + 2}`,
           short: `${side[0]}${r + 1}${outlet ? '⤓' : '↓'}`,
@@ -83,26 +75,36 @@ export class Sandbox {
   sideAction(row) { return row; }
   verticalAction(col, row) { return this.rows + col * this.rows + row; }
 
-  // ---------------------------------------------------------------- encoding
+  // ---------------------------------------------------------------- states
 
-  /** Pack a cell array into one number (base 6, exact up to 20 cells). */
-  encode(cells) {
+  /** A fresh state: the given cells, every gate closed. */
+  initial(cells) { return { cells: Uint8Array.from(cells), gates: 0 }; }
+
+  /** Pack a state into one number: cells in base 6, then the gate mask. Exact up to 7 rows. */
+  encode(state) {
+    const { cells } = state;
     let key = 0;
     for (let i = this.size - 1; i >= 0; i--) key = key * 6 + cells[i];
-    return key;
+    return key * this.gateSpace + state.gates;
   }
 
   decode(key) {
+    const gates = key % this.gateSpace;
+    let rest = (key - gates) / this.gateSpace;
     const cells = new Uint8Array(this.size);
     for (let i = 0; i < this.size; i++) {
-      cells[i] = key % 6;
-      key = Math.floor(key / 6);
+      cells[i] = rest % 6;
+      rest = (rest - cells[i]) / 6;
     }
-    return cells;
+    return { cells, gates };
   }
 
-  /** Goal: no box contains sand (water and concrete may remain). */
-  isGoal(cells) {
+  /** Is the top-down gate under cell i open? */
+  isOpen(state, i) { return (state.gates & (1 << i)) !== 0; }
+
+  /** Goal: no box contains sand (water, concrete and open gates do not matter). */
+  isGoal(state) {
+    const { cells } = state;
     for (let i = 0; i < this.size; i++) if (MAT[cells[i]] === SAND) return false;
     return true;
   }
@@ -111,19 +113,23 @@ export class Sandbox {
 
   /**
    * Open one gate.
-   * @param {Uint8Array} cells   state before the action (not modified)
-   * @param {number} id          action id
+   * @param {{cells: Uint8Array, gates: number}} state   not modified
+   * @param {number} id                                  action id
    * @param {Array|null} events  if given, receives one entry per elementary flow, for animation
-   * @returns {null | {cells: Uint8Array, cost: number, concrete: number, s: number, s2: number}}
-   *          null when the gate would open on nothing (no sand or water moves).
+   * @returns {null | {state, cost: number, concrete: number, s: number, s2: number}}
+   *          null when the action would change nothing.
    */
-  apply(cells, id, events = null) {
+  apply(state, id, events = null) {
     const act = this.actions[id];
-    return act.type === 'b' ? this.#side(cells, act.row, events) : this.#vertical(cells, act.col, act.row, events);
+    return act.type === 'b' ? this.#side(state, act.row, events) : this.#vertical(state, act.cell, events);
   }
 
-  /** Side gate: a full box levels with an empty neighbour, or spills into a half box of the other material. */
-  #side(cells, row, events) {
+  /**
+   * Side gate. It closes again right after: a full box levels with an empty neighbour, or spills
+   * into a half box of the other material. Whatever moved may then flow on through open gates.
+   */
+  #side(state, row, events) {
+    const cells = state.cells;
     const i = row * 2;
     const j = i + 1;
     const a = cells[i];
@@ -139,7 +145,7 @@ export class Sandbox {
     const mf = MAT[cells[from]];
     const lt = LEVEL[cells[to]];
     const mt = MAT[cells[to]];
-    let concrete = 0;
+    const tally = { concrete: 0 };
     const out = cells.slice();
     if (lt === 0) {
       out[from] = cellCode(mf, 1);
@@ -148,41 +154,32 @@ export class Sandbox {
       // full box of one material pushes into a half box of the other: they set into concrete
       out[from] = cellCode(mf, 1);
       out[to] = CONCRETE;
-      concrete = 1;
+      tally.concrete = 1;
     } else {
       return null; // same material, 1 and 1/2: the levels 3/4 + 3/4 are not allowed, gate stays shut
     }
-    if (events) events.push({ kind: 'side', from, to, amount: 1, mat: mf, concrete: concrete === 1, chain: false, cells: out.slice() });
-    return { cells: out, cost: 1 + concrete * this.concretePenalty, concrete, s: 0, s2: 0 };
+    if (events) events.push({ kind: 'side', from, to, amount: 1, mat: mf, concrete: tally.concrete === 1, chain: false, cells: out.slice() });
+    const gates = this.#settle(out, state.gates, tally, events);
+    return { state: { cells: out, gates }, cost: 1 + tally.concrete * this.concretePenalty, concrete: tally.concrete, s: 0, s2: 0 };
   }
 
-  /** Top-down gate under box (row, col). The last row's gate is the outlet. */
-  #vertical(cells, col, row, events) {
-    const u = row * 2 + col;
-    const cu = cells[u];
-    const lu = LEVEL[cu];
-    if (lu === 0 || cu === CONCRETE) return null;
-    const out = cells.slice();
+  /**
+   * Top-down gate under cell u. It can only be opened when it is closed and the box above it
+   * holds sand or water (otherwise it would close again at once). It then stays open: everything
+   * that can flow through the open gates flows, at the same moment, until nothing moves any more.
+   * Gates whose box above has become empty close again.
+   */
+  #vertical(state, u, events) {
+    const cu = state.cells[u];
+    if (!flows(cu) || this.isOpen(state, u)) return null;
+    const out = state.cells.slice();
     const tally = { concrete: 0 };
-    let moved;
-    if (row === this.rows - 1) {
-      out[u] = EMPTY;
-      moved = lu;
-      if (events) events.push({ kind: 'out', from: u, to: -1, amount: lu, mat: MAT[cu], concrete: false, chain: false, cells: out.slice() });
-    } else {
-      moved = this.#pour(out, u, u + 2, tally, events, false);
-      if (moved === 0) return null;
-    }
-
-    // Doors above open at the same moment as the gate itself; s' below is read after everything fell.
-    if (moved > 0) {
-      if (this.chain === 'press') { if (lu === 2) this.#follow(out, col, row, tally, events); }
-      else if (this.chain === 'always') this.#settle(out, col, row, tally, events);
-    }
-
+    const lu = LEVEL[cu];
+    if (events) events.push({ kind: 'open', from: u, to: -1, amount: 0, mat: MAT[cu], concrete: false, chain: false, cells: out.slice() });
+    const gates = this.#settle(out, state.gates | (1 << u), tally, events);
     const s2 = LEVEL[out[u]];
     return {
-      cells: out,
+      state: { cells: out, gates },
       cost: 1 + 2 * (lu + s2) + tally.concrete * this.concretePenalty, // 1 + 4 (s + s') with s in units
       concrete: tally.concrete,
       s: lu,
@@ -191,12 +188,12 @@ export class Sandbox {
   }
 
   /** Let box `a` flow into the box `b` right below it. Returns the amount moved (half-units). */
-  #pour(out, a, b, tally, events, chain) {
+  #pour(out, a, b, tally, events) {
     const ca = out[a];
-    const la = LEVEL[ca];
-    if (la === 0 || ca === CONCRETE) return 0;
+    if (!flows(ca)) return 0;
     const cb = out[b];
     if (cb === CONCRETE) return 0;
+    const la = LEVEL[ca];
     const lb = LEVEL[cb];
     const p = Math.min(la, 2 - lb);
     if (p === 0) return 0;
@@ -209,48 +206,43 @@ export class Sandbox {
     } else {
       out[b] = cellCode(ma, lb + p);
     }
-    if (events) events.push({ kind: 'pour', from: a, to: b, amount: p, mat: ma, concrete: reacts, chain, cells: out.slice() });
+    if (events) events.push({ kind: 'pour', from: a, to: b, amount: p, mat: ma, concrete: reacts, chain: true, cells: out.slice() });
     return p;
   }
 
   /**
-   * Doors pressed from both sides. The box at `row` was full, so the door on top of it opens and
-   * the box above pours in; that box's own top door opens only if it was full too, and so on.
+   * Everything flows through the open gates until it has settled, then the gates with nothing
+   * above them close. Returns the new gate mask.
    */
-  #follow(out, col, row, tally, events) {
-    for (let r = row; r > 0; r--) {
-      const a = (r - 1) * 2 + col;
-      const above = out[a];
-      if (above === EMPTY || above === CONCRETE) break;
-      const wasFull = LEVEL[above] === 2;
-      this.#pour(out, a, a + 2, tally, events, true);
-      if (!wasFull) break;
-    }
-  }
-
-  /** 'always' rule: the whole unbroken pile directly above `row` settles down under gravity. */
-  #settle(out, col, row, tally, events) {
-    let top = row;
-    while (top > 0) {
-      const c = out[(top - 1) * 2 + col];
-      if (c === EMPTY || c === CONCRETE) break;
-      top--;
-    }
+  #settle(out, gates, tally, events) {
+    const bottom = (this.rows - 1) * 2;
     let moved = true;
     while (moved) {
       moved = false;
-      for (let r = row - 1; r >= top; r--) {
-        if (this.#pour(out, r * 2 + col, (r + 1) * 2 + col, tally, events, true) > 0) moved = true;
+      for (let i = this.size - 1; i >= 0; i--) {
+        if (!(gates & (1 << i))) continue;
+        if (i >= bottom) {
+          // outlet: whatever is in the bottom box leaves the grid
+          const c = out[i];
+          if (!flows(c)) continue;
+          out[i] = EMPTY;
+          moved = true;
+          if (events) events.push({ kind: 'out', from: i, to: -1, amount: LEVEL[c], mat: MAT[c], concrete: false, chain: true, cells: out.slice() });
+        } else if (this.#pour(out, i, i + 2, tally, events) > 0) {
+          moved = true;
+        }
       }
     }
+    for (let i = 0; i < this.size; i++) if (!flows(out[i])) gates &= ~(1 << i);
+    return gates;
   }
 
-  /** All state-changing actions from `cells`: [{a, s, c}] with s the encoded successor. */
-  successors(cells) {
+  /** All state-changing actions from `state`: [{a, s, c}] with s the encoded successor. */
+  successors(state) {
     const list = [];
     for (let id = 0; id < this.actions.length; id++) {
-      const r = this.apply(cells, id);
-      if (r) list.push({ a: id, s: this.encode(r.cells), c: r.cost });
+      const r = this.apply(state, id);
+      if (r) list.push({ a: id, s: this.encode(r.state), c: r.cost });
     }
     return list;
   }
@@ -258,7 +250,8 @@ export class Sandbox {
   // ------------------------------------------------------------------ helpers
 
   /** Total sand in the grid, in half-units. */
-  sand(cells) {
+  sand(state) {
+    const cells = state.cells || state;
     let t = 0;
     for (let i = 0; i < this.size; i++) if (MAT[cells[i]] === SAND) t += LEVEL[cells[i]];
     return t;
@@ -272,7 +265,7 @@ export class Sandbox {
 
   empty() { return new Uint8Array(this.size); }
 
-  /** Random initial state, each cell drawn independently. */
+  /** Random initial cells, each drawn independently. */
   random(probs = PROBS_SAND, rng = Math.random) {
     const cells = new Uint8Array(this.size);
     const order = [[EMPTY, probs.empty], [SAND_HALF, probs.sandHalf], [SAND_FULL, probs.sandFull], [WATER_HALF, probs.waterHalf || 0], [WATER_FULL, probs.waterFull || 0]];
@@ -319,6 +312,17 @@ export function formatGrid(cells, sep = '\n') {
   const lines = [];
   for (let i = 0; i < cells.length; i += 2) lines.push(`${GLYPH[cells[i]]} ${GLYPH[cells[i + 1]]}`);
   return lines.join(sep);
+}
+
+/** "1 0 / ½ ½" with the open gates marked: a '-' line under a row means that gate is open. */
+export function formatState(model, state) {
+  const lines = [];
+  for (let r = 0; r < model.rows; r++) {
+    const i = r * 2;
+    lines.push(`${GLYPH[state.cells[i]]} ${GLYPH[state.cells[i + 1]]}`);
+    lines.push(`${model.isOpen(state, i) ? '-' : '_'} ${model.isOpen(state, i + 1) ? '-' : '_'}`);
+  }
+  return lines.join('\n');
 }
 
 /** Small deterministic PRNG (mulberry32) so experiments are reproducible. */
