@@ -225,16 +225,29 @@ export function dotPlot(container, spec) {
     const root = frame(container, w, h, m, { xTitle: spec.xTitle });
     const tip = tooltip(container);
     const pw = w - m.l - m.r;
-    const vals = spec.rows.map((r) => r.value).filter((v) => v > 0);
-    const lo = Math.floor(Math.log10(Math.min(...vals, 1e9)));
-    const hi = Math.ceil(Math.log10(Math.max(...vals, lo + 1)) + 1e-9);
-    const span = Math.max(1, hi - lo);
-    const x = (v) => m.l + ((Math.log10(Math.max(v, 10 ** lo)) - lo) / span) * pw;
-    const step = Math.ceil(span / Math.max(2, Math.floor(pw / 70)));
-    for (let e = lo; e <= hi; e += step) {
-      const px = x(10 ** e);
-      svg('line', { x1: px, x2: px, y1: m.t, y2: h - m.b, class: 'gridline' }, root);
-      text(root, px, h - m.b + 16, fmt(10 ** e), { 'text-anchor': 'middle' });
+    const vals = spec.rows.map((r) => r.value).filter((v) => Number.isFinite(v));
+    let x;
+    if (spec.linear) {
+      const min = spec.min ?? 0;
+      const ticks = niceTicks(min, Math.max(...vals, min + 1e-9), 5);
+      const top = ticks[ticks.length - 1];
+      x = (v) => m.l + ((v - min) / (top - min)) * pw;
+      for (const t of ticks) {
+        svg('line', { x1: x(t), x2: x(t), y1: m.t, y2: h - m.b, class: 'gridline' }, root);
+        text(root, x(t), h - m.b + 16, fmt(t), { 'text-anchor': 'middle' });
+      }
+    } else {
+      const pos = vals.filter((v) => v > 0);
+      const lo = Math.floor(Math.log10(Math.min(...pos, 1e9)));
+      const hi = Math.ceil(Math.log10(Math.max(...pos, lo + 1)) + 1e-9);
+      const span = Math.max(1, hi - lo);
+      x = (v) => m.l + ((Math.log10(Math.max(v, 10 ** lo)) - lo) / span) * pw;
+      const step = Math.ceil(span / Math.max(2, Math.floor(pw / 70)));
+      for (let e = lo; e <= hi; e += step) {
+        const px = x(10 ** e);
+        svg('line', { x1: px, x2: px, y1: m.t, y2: h - m.b, class: 'gridline' }, root);
+        text(root, px, h - m.b + 16, fmt(10 ** e), { 'text-anchor': 'middle' });
+      }
     }
     const marks = svg('g', {}, root);
     spec.rows.forEach((r, i) => {

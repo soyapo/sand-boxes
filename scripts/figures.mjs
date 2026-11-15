@@ -97,25 +97,33 @@ function bubbles({ title, points, xTitle, yTitle, diagonal = false, integer = fa
   return page(w, h, title, s);
 }
 
-function dots({ title, rows, xTitle }) {
-  const rowH = 30, w = 720, m = { l: 120, r: 70, t: 44, b: 52 };
+function dots({ title, rows, xTitle, linear = false, min = 0 }) {
+  const rowH = 30, w = 720, m = { l: 150, r: 70, t: 44, b: 52 };
   const h = m.t + m.b + rowH * rows.length;
   const pw = w - m.l - m.r;
   const vals = rows.map((r) => r.value).filter((v) => v > 0);
-  const lo = Math.floor(Math.log10(Math.min(...vals)));
-  const hi = Math.ceil(Math.log10(Math.max(...vals)) + 1e-9);
-  const span = Math.max(1, hi - lo);
-  const x = (v) => m.l + ((Math.log10(v) - lo) / span) * pw;
+  let x;
   let s = '';
-  for (let e = lo; e <= hi; e++) s += `<line x1="${x(10 ** e)}" x2="${x(10 ** e)}" y1="${m.t}" y2="${h - m.b}" stroke="${C.grid}"/><text x="${x(10 ** e)}" y="${h - m.b + 17}" text-anchor="middle" fill="${C.muted}">${fmt(10 ** e)}</text>`;
+  if (linear) {
+    const tk = ticks(Math.max(...vals) - min, 5).map((t) => t + min);
+    const top = tk[tk.length - 1];
+    x = (v) => m.l + ((v - min) / (top - min)) * pw;
+    for (const t of tk) s += `<line x1="${x(t)}" x2="${x(t)}" y1="${m.t}" y2="${h - m.b}" stroke="${C.grid}"/><text x="${x(t)}" y="${h - m.b + 17}" text-anchor="middle" fill="${C.muted}">${t.toFixed(1)}</text>`;
+  } else {
+    const lo = Math.floor(Math.log10(Math.min(...vals)));
+    const hi = Math.ceil(Math.log10(Math.max(...vals)) + 1e-9);
+    const span = Math.max(1, hi - lo);
+    x = (v) => m.l + ((Math.log10(v) - lo) / span) * pw;
+    for (let e = lo; e <= hi; e++) s += `<line x1="${x(10 ** e)}" x2="${x(10 ** e)}" y1="${m.t}" y2="${h - m.b}" stroke="${C.grid}"/><text x="${x(10 ** e)}" y="${h - m.b + 17}" text-anchor="middle" fill="${C.muted}">${fmt(10 ** e)}</text>`;
+  }
   rows.forEach((r, i) => {
     const cy = m.t + i * rowH + rowH / 2;
     s += `<text x="${m.l - 12}" y="${cy + 4}" text-anchor="end" fill="${C.ink}" font-size="13">${r.label}</text>`;
     s += `<line x1="${m.l}" x2="${x(r.value)}" y1="${cy}" y2="${cy}" stroke="${C.blue}" stroke-opacity="0.35" stroke-width="2"/>`;
     s += `<circle cx="${x(r.value)}" cy="${cy}" r="5.5" fill="${C.blue}" stroke="${C.bg}" stroke-width="2"/>`;
-    s += `<text x="${x(r.value) + 10}" y="${cy + 4}" fill="${C.ink2}">${fmt(r.value)}</text>`;
+    s += `<text x="${x(r.value) + 10}" y="${cy + 4}" fill="${C.ink2}">${linear ? r.value.toFixed(3) : fmt(r.value)}</text>`;
   });
-  s += `<text x="${m.l + pw / 2}" y="${h - 12}" text-anchor="middle" fill="${C.ink2}">${xTitle} (logarithmic axis)</text>`;
+  s += `<text x="${m.l + pw / 2}" y="${h - 12}" text-anchor="middle" fill="${C.ink2}">${xTitle}${linear ? '' : ' (logarithmic axis)'}</text>`;
   return page(w, h, title, s);
 }
 
@@ -144,6 +152,19 @@ function figures(name, data) {
   save('memory', dots({ title: `Mean peak memory per instance (${what})`, rows: data.algos.map((a) => ({ label: a.label, value: a.memory.mean })), xTitle: 'states held at once' }));
 }
 
+function figuresA2(name, data) {
+  const by = Object.fromEntries(data.algos.map((a) => [a.key, a]));
+  const g = by.greedy;
+  const save = (file, svg) => writeFileSync(resolve(out, `${name}-${file}.svg`), svg);
+  const informed = data.algos.filter((a) => a.key !== 'greedy' && a.key !== 'bfs');
+  save('ebf', dots({ title: 'Effective branching factor b* per heuristic (mean over all 59,049 initial states)', rows: informed.map((a) => ({ label: a.label, value: a.ebf.mean })), xTitle: 'b* (closer to 1 is better)', linear: true, min: 1 }));
+  save('expanded', dots({ title: 'Mean states expanded per initial state', rows: informed.map((a) => ({ label: a.label, value: a.expanded.mean })), xTitle: 'states expanded' }));
+  save('time', dots({ title: 'Mean time per initial state', rows: informed.map((a) => ({ label: a.label, value: a.timeMs.mean })), xTitle: 'milliseconds' }));
+  save('ratio-hist', columns({ title: 'Greedy_opt_ratio = greedy cost ÷ optimum cost (all 59,049 states, 5×2)', bars: ratioBars(g), xTitle: 'ratio (label = upper edge of the bin; green bar = exactly 1)', yTitle: 'instances', every: Math.ceil(ratioBars(g).length / 14) }));
+  save('greedy-vs-opt', bubbles({ title: 'Cost by greedy solution against the optimum (all 59,049 states, 5×2)', points: g.costVsOpt, xTitle: 'cost by greedy solution', yTitle: 'optimum cost', diagonal: true }));
+  save('actions-vs-sides', bubbles({ title: 'Actions to the goal against type-b actions, optimal plans (all 59,049 states, 5×2)', points: data.optimal.actions, xTitle: 'number of actions to the goal state', yTitle: 'number of actions of type b', integer: true }));
+}
+
 function tables(name, data) {
   const { meta, optimal, algos } = data;
   const g = algos.find((a) => a.key === 'greedy');
@@ -165,6 +186,10 @@ function tables(name, data) {
   });
   L.push('\n| Algorithm | Optimal on | Mean cost ÷ opt | Worst | Mean time (ms) | Median | p95 | Max | Total (s) |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|');
   for (const a of algos) L.push(`| ${a.label} | ${pct(a.optimal / meta.solvable)} | ${a.ratio.mean.toFixed(3)} | ${a.ratio.max.toFixed(2)} | ${fmt(a.timeMs.mean)} | ${fmt(a.timeMs.median)} | ${fmt(a.timeMs.p95)} | ${fmt(a.timeMs.max)} | ${fmt(a.timeMs.total / 1000)} |`);
+  if (algos[0].ebf) {
+    L.push('\n| Algorithm | Mean b* | Median b* | p95 b* | Max b* | Finished |\n|---|---:|---:|---:|---:|---:|');
+    for (const a of algos) L.push(`| ${a.label} | ${a.ebf.mean.toFixed(4)} | ${a.ebf.median.toFixed(4)} | ${a.ebf.p95.toFixed(4)} | ${a.ebf.max.toFixed(3)} | ${int(a.solved)} |`);
+  }
   L.push('\n| Algorithm | Mean expanded | Median | Max expanded | Mean generated | Mean peak memory | Median | Max peak memory | Aborted |\n|---|---:|---:|---:|---:|---:|---:|---:|---:|');
   for (const a of algos) L.push(`| ${a.label} | ${fmt(a.expanded.mean)} | ${fmt(a.expanded.median)} | ${int(a.expanded.max)} | ${fmt(a.generated.mean)} | ${fmt(a.memory.mean)} | ${fmt(a.memory.median)} | ${int(a.memory.max)} | ${a.aborted} |`);
   console.log(L.join('\n'));
@@ -173,12 +198,14 @@ function tables(name, data) {
 const FIGURES_FOR = ['exhaustive-5x2', 'water-5x2'];
 mkdirSync(out, { recursive: true });
 const tablesOnly = process.argv.includes('--tables');
-for (const { file } of JSON.parse(readFileSync(resolve(root, 'data/index.json'), 'utf8'))) {
+const listed = JSON.parse(readFileSync(resolve(root, 'data/index.json'), 'utf8')).map((d) => d.file);
+for (const file of [...listed, 'a2-5x2.json']) {
   const path = resolve(root, 'data', file);
   if (!existsSync(path)) { console.log(`(skipping ${file}: not generated yet)`); continue; }
   const data = JSON.parse(readFileSync(path, 'utf8'));
   const name = file.replace(/\.json$/, '');
   if (!tablesOnly && FIGURES_FOR.includes(name)) figures(name, data);
+  if (!tablesOnly && name === 'a2-5x2') figuresA2(name, data);
   tables(name, data);
 }
 if (!tablesOnly) console.log(`\nFigures written to docs/figures/`);

@@ -3,6 +3,8 @@
 // { cells, gates }.
 
 import { LEVEL, MAT, SAND, WATER, CONCRETE } from './model.js';
+import { features } from './features.js';
+import { LEARNED } from './learned.js';
 
 /** h = 0. Turns A* into uniform-cost search. */
 function zero() { return 0; }
@@ -77,9 +79,35 @@ function fall(model, state) {
   return 2.5 * h;
 }
 
+/**
+ * Learned heuristic: a linear function of the features in features.js, fitted by least squares to
+ * the true cost-to-go h* of every reachable state of the 5×2 grid (see scripts/learn-heuristic.mjs
+ * and docs/a2-heuristic-design.md). Nothing guarantees admissibility; the report measures how often
+ * and by how much it overestimates. Zero on goal states.
+ */
+function learned(model, state) {
+  if (!LEARNED.weights.length) return 0;
+  const f = features(model, state);
+  if (f[1] === 0) return 0;
+  let h = 0;
+  for (let i = 0; i < f.length; i++) h += LEARNED.weights[i] * f[i];
+  return h > 0 ? h : 0;
+}
+
+/**
+ * The learned heuristic made safe on the training set: shifted down by its largest overestimate
+ * there, and never below the proven bound h₂. It is at least as informed as h₂ and never above h*
+ * on any training state, but admissibility on unseen states is not guaranteed.
+ */
+function learnedSafe(model, state) {
+  return Math.max(gates(model, state), learned(model, state) - LEARNED.safeShift);
+}
+
 export const HEURISTICS = Object.freeze({
   gap: { name: 'Closed gates', short: 'h₂', admissible: true, fn: gates, note: '3 for every closed gate that has sand above it in its column (each must be opened by a paid action). Admissible and consistent.' },
   volume: { name: 'Columns', short: 'h₁', admissible: true, fn: columns, note: '3 for every column that still holds sand. Admissible and consistent, but weak.' },
+  learned: { name: 'Linear regression', short: 'h₄', admissible: false, fn: learned, note: 'Least-squares fit of h* on 13 state features. Accurate on average, but it can overestimate, so A* loses its guarantee.' },
+  'learned-safe': { name: 'Regression, made safe', short: 'h₅', admissible: false, fn: learnedSafe, note: 'max(h₂, h₄ − its worst overestimate on the training states): never above h* there and never below h₂, but not proven admissible.' },
   fall: { name: 'Fall distance', short: 'h₃', admissible: false, fn: fall, note: '5 per unit of sand per closed gate below it. Overestimates, so A* loses its guarantee — the natural guide for greedy best-first search.' },
   zero: { name: 'Zero', short: 'h₀', admissible: true, fn: zero, note: 'No information: A* behaves exactly like uniform-cost search.' },
 });

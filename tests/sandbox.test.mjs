@@ -6,7 +6,9 @@ import { Sandbox, parseGrid, formatGrid, formatState, PROFESSOR_EXAMPLE, CONCRET
 import { search, ALGORITHMS } from '../js/core/search.js';
 import { makeProblem } from '../js/core/problem.js';
 import { HEURISTICS } from '../js/core/heuristics.js';
-import { buildGraph, solveGraph, analyze } from '../js/core/analysis.js';
+import { buildGraph, solveGraph, analyze, effectiveBranchingFactor } from '../js/core/analysis.js';
+import { features, FEATURE_NAMES } from '../js/core/features.js';
+import { LEARNED } from '../js/core/learned.js';
 
 /** Play a plan written as "S2 L1 R4": side gate of row 2, gate under row 1 left, under row 4 right. */
 function play(model, cells, plan) {
@@ -230,4 +232,43 @@ test('water: goal ignores water, concrete and open gates', () => {
   const m = new Sandbox({ rows: 1 });
   assert.ok(m.isGoal({ cells: Uint8Array.of(WATER_HALF, CONCRETE), gates: 1 }));
   assert.ok(!m.isGoal({ cells: Uint8Array.of(SAND_HALF, EMPTY), gates: 0 }));
+});
+
+test('effective branching factor: 1 + b + b² + … + b^d = N + 1', () => {
+  assert.equal(effectiveBranchingFactor(6, 2).toFixed(6), '2.000000'); // 2 + 4 = 6
+  assert.equal(effectiveBranchingFactor(3, 1).toFixed(6), '3.000000');
+  assert.ok(Math.abs(effectiveBranchingFactor(39, 3) - 3) < 1e-6); // 3 + 9 + 27
+  assert.equal(effectiveBranchingFactor(2, 2), 1); // fewer nodes than a path: b* = 1
+  assert.ok(Number.isNaN(effectiveBranchingFactor(10, 0)));
+});
+
+test('state features count what they say', () => {
+  const m = new Sandbox({ rows: 3 });
+  const f = features(m, m.initial(parseGrid('1 0/½ 1/0 0')));
+  const by = Object.fromEntries(FEATURE_NAMES.map((n, i) => [n, f[i]]));
+  assert.equal(by.bias, 1);
+  assert.equal(by['sand (half-units)'], 5);
+  assert.equal(by['columns with sand'], 2);
+  assert.equal(by['closed gates with sand above'], 5); // left: 3 gates, right: 2
+  assert.equal(by['closed gates under a full box'], 2);
+  assert.equal(by['full sand boxes'], 2);
+  assert.equal(by['half sand boxes'], 1);
+  assert.equal(by['rows where a side gate can act'], 1);
+  assert.equal(by['empty boxes below sand'], 2);
+  const g = features(m, { cells: parseGrid('1 0/½ 1/0 0'), gates: 0b000001 });
+  assert.equal(g[FEATURE_NAMES.indexOf('open gates with sand above')], 1);
+  assert.equal(g[FEATURE_NAMES.indexOf('closed gates with sand above')], 4);
+});
+
+test('the learned heuristic is zero on goal states and h5 never falls below the proven h2', () => {
+  if (!LEARNED.weights.length) return;
+  const m = new Sandbox({ rows: 4 });
+  const graph = buildGraph(m);
+  let below = 0;
+  for (let i = 0; i < graph.N; i += 7) {
+    const st = graph.stateOf(i);
+    if (graph.goal[i]) { assert.equal(HEURISTICS.learned.fn(m, st), 0); continue; }
+    if (HEURISTICS['learned-safe'].fn(m, st) < HEURISTICS.gap.fn(m, st) - 1e-9) below++;
+  }
+  assert.equal(below, 0);
 });

@@ -8,7 +8,8 @@
     "start": "node scripts/serve.mjs",
     "test": "node --test tests/sandbox.test.mjs",
     "solve": "node scripts/solve.mjs",
-    "analyze": "node scripts/analyze.mjs"
+    "analyze": "node scripts/analyze.mjs",
+    "learn": "node scripts/learn-heuristic.mjs"
   },
   "engines": { "node": ">=18" }
 }

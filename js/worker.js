@@ -5,7 +5,7 @@ import { Sandbox } from './core/model.js';
 import { search, ALGORITHMS } from './core/search.js';
 import { makeProblem, describePath } from './core/problem.js';
 import { HEURISTICS } from './core/heuristics.js';
-import { createWorkerHandler, VARIANTS } from './core/analysis.js';
+import { createWorkerHandler, variantsOf, effectiveBranchingFactor } from './core/analysis.js';
 
 const LIMIT = 1_500_000;
 const analysis = createWorkerHandler((m) => postMessage(m));
@@ -22,6 +22,7 @@ function pack(model, r) {
     maxFrontier: r.maxFrontier,
     iterations: r.iterations,
     timeMs: r.timeMs,
+    ebf: r.found && r.path.length ? effectiveBranchingFactor(r.generated, r.path.length) : null,
     ...describePath(model, r.path),
   };
 }
@@ -31,7 +32,7 @@ self.onmessage = (e) => {
   if (m.type === 'init' || m.type === 'run') { analysis(m); return; }
   try {
     const model = new Sandbox(m.cfg);
-    const start = model.initial(Uint8Array.from(m.cells));
+    const start = { cells: Uint8Array.from(m.cells), gates: m.gates || 0 }; // a state may come with open gates
     if (m.type === 'solve') {
       const base = makeProblem(model, start, m.heuristic);
       const r = search(m.algo, base, { maxExpanded: LIMIT });
@@ -47,7 +48,7 @@ self.onmessage = (e) => {
     } else if (m.type === 'compare') {
       const base = makeProblem(model, start, 'gap');
       base.warm(400_000);
-      const results = VARIANTS.map((v) => ({
+      const results = variantsOf(m.variants ? { variants: m.variants } : null).map((v) => ({
         key: v.key,
         label: v.label,
         algo: v.algo,

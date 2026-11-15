@@ -14,7 +14,7 @@ export const RBFS_BUDGET = 500_000;
  * sweep), followed by the four main searches and then the informed ones.
  * RBFS is a pure tree search, so it gets its own, smaller expansion budget.
  */
-export const VARIANTS = Object.freeze([
+export const ALL_VARIANTS = Object.freeze([
   { key: 'greedy', algo: 'sweep', h: null, label: 'Greedy approach' },
   { key: 'bfs', algo: 'bfs', h: null, label: 'BFS' },
   { key: 'dfs', algo: 'dfs', h: null, label: 'DFS' },
@@ -26,7 +26,47 @@ export const VARIANTS = Object.freeze([
   { key: 'idastar', algo: 'idastar', h: 'gap', label: 'IDA*' },
   { key: 'wastar', algo: 'wastar', h: 'gap', label: 'Weighted A*' },
   { key: 'gbfs', algo: 'gbfs', h: 'fall', label: 'Greedy best-first' },
+  { key: 'astar-learned', algo: 'astar', h: 'learned', label: 'A* (h₄ regression)' },
+  { key: 'astar-safe', algo: 'astar', h: 'learned-safe', label: 'A* (h₅ scaled)' },
+  { key: 'rbfs-learned', algo: 'rbfs', h: 'learned', label: 'RBFS (h₄)', maxExpanded: RBFS_BUDGET },
 ]);
+
+/** Assignment 1: the greedy approach, the four main searches and the informed ones. */
+export const VARIANTS = Object.freeze(ALL_VARIANTS.filter((v) => !['astar-learned', 'astar-safe', 'rbfs-learned'].includes(v.key)));
+
+/** Assignment 2: how much each heuristic buys A* (and RBFS), plus the greedy approach for the ratio plots. */
+export const A2_VARIANTS = Object.freeze(['greedy', 'bfs', 'ucs', 'astar-volume', 'astar-gap', 'astar-learned', 'astar-safe', 'wastar', 'rbfs', 'rbfs-learned']
+  .map((key) => ALL_VARIANTS.find((v) => v.key === key)));
+
+/** Resolve cfg.variants (keys) to variant entries; the Assignment 1 set by default. */
+export function variantsOf(cfg) {
+  if (!cfg || !cfg.variants) return VARIANTS;
+  return cfg.variants.map((key) => {
+    const v = ALL_VARIANTS.find((x) => x.key === key);
+    if (!v) throw new RangeError(`unknown variant: ${key}`);
+    return v;
+  });
+}
+
+/**
+ * Effective branching factor b*: the branching factor of the uniform tree of depth d that would
+ * hold N nodes, i.e. the solution of 1 + b + b² + … + b^d = N + 1 (Russell & Norvig). Solved by
+ * bisection; d is the number of actions of the returned plan and N the number of states generated.
+ */
+export function effectiveBranchingFactor(generated, depth) {
+  if (!(depth > 0) || !(generated > 0)) return NaN;
+  const target = generated + 1;
+  const total = (b) => { let sum = 1; let pow = 1; for (let i = 0; i < depth; i++) { pow *= b; sum += pow; } return sum; };
+  let lo = 1;
+  let hi = Math.max(2, generated);
+  if (total(1) >= target) return 1;
+  for (let k = 0; k < 100; k++) {
+    const mid = (lo + hi) / 2;
+    if (total(mid) < target) lo = mid; else hi = mid;
+    if (hi - lo < 1e-9) break;
+  }
+  return (lo + hi) / 2;
+}
 
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
@@ -158,7 +198,7 @@ class Collector {
   constructor(variants) {
     this.variants = variants;
     this.per = variants.map(() => ({
-      expanded: [], generated: [], memory: [], frontier: [], time: [], ratio: [], steps: [],
+      expanded: [], generated: [], memory: [], frontier: [], time: [], ratio: [], steps: [], ebf: [],
       solved: 0, aborted: 0, optimal: 0, costSum: 0,
       costVsOpt: new PointCloud(), actions: new PointCloud(), depth: new Map(),
     }));
@@ -208,6 +248,7 @@ class Collector {
       p.costSum += r.cost;
       p.steps.push(r.steps);
       p.actions.add(r.steps, r.sides, rec.key);
+      if (r.steps > 0) { const b = effectiveBranchingFactor(r.generated, r.steps); if (Number.isFinite(b)) p.ebf.push(b); }
       if (solvable) {
         if (r.cost === rec.opt) p.optimal++;
         p.costVsOpt.add(r.cost, rec.opt, rec.key);
@@ -248,6 +289,7 @@ class Collector {
         frontier: summarize(p.frontier),
         timeMs: summarize(p.time),
         steps: summarize(p.steps),
+        ebf: summarize(p.ebf),
         costVsOpt: p.costVsOpt.toJSON(),
         actions: p.actions.toJSON(),
         byDepth: [...p.depth.entries()].sort((a, b) => a[0] - b[0])
@@ -302,6 +344,7 @@ export function createRunner(cfg = {}) {
   const kind = cfg.kind === 'random' ? 'random' : 'exhaustive';
   const rows = cfg.rows ?? 5;
   const seed = cfg.seed ?? 1;
+  const variants = variantsOf(cfg);
 
   if (kind === 'exhaustive') {
     const maxExpanded = cfg.maxExpanded ?? 2_000_000;
@@ -326,15 +369,15 @@ export function createRunner(cfg = {}) {
       const succOf = (s) => graph.succ[s];
       const zero = () => 0;
       const cellsOf = (s) => graph.stateOf(s).cells;
-      const problems = VARIANTS.map((v) => ({ start: 0, actions: model.actions, isGoal, succ: succOf, cells: cellsOf, h: v.h ? ((arr) => (s) => arr[s])(hs[v.h]) : zero }));
+      const problems = variants.map((v) => ({ start: 0, actions: model.actions, isGoal, succ: succOf, cells: cellsOf, h: v.h ? ((arr) => (s) => arr[s])(hs[v.h]) : zero }));
       return { graph, solved, problems };
     };
     return {
       ids,
-      meta: { kind: sampled ? 'sample' : 'exhaustive', variant: 'sand', rows, stateSpace: N0, seed: sampled ? seed : null },
+      meta: { kind: sampled ? 'sample' : 'exhaustive', variant: 'sand', rows, stateSpace: N0, seed: sampled ? seed : null, variants: variants.map((v) => v.key) },
       run(i) {
         ctx ??= prepare();
-        const runs = VARIANTS.map((v, k) => {
+        const runs = variants.map((v, k) => {
           const p = ctx.problems[k];
           p.start = i; // initial state i has graph index i
           return slim(model, search(v.algo, p, { maxExpanded: Math.min(maxExpanded, v.maxExpanded ?? Infinity) }));
@@ -350,15 +393,15 @@ export function createRunner(cfg = {}) {
   const count = cfg.count ?? 500;
   const maxExpanded = cfg.maxExpanded ?? 300_000;
   const model = new Sandbox({ rows, concretePenalty });
-  const exactIndexes = VARIANTS.map((v, k) => k).filter((k) => ALGORITHMS[VARIANTS[k].algo].optimal && HEURISTICS[VARIANTS[k].h || 'zero'].admissible);
+  const exactIndexes = variants.map((v, k) => k).filter((k) => ALGORITHMS[variants[k].algo].optimal && HEURISTICS[variants[k].h || 'zero'].admissible);
   return {
     ids: Array.from({ length: count }, (_, i) => i),
-    meta: { kind: 'random', variant: water ? 'water' : 'sand', rows, probs, concretePenalty, seed, maxExpanded, stateSpace: (water ? 6 : 3) ** (rows * 2) },
+    meta: { kind: 'random', variant: water ? 'water' : 'sand', rows, probs, concretePenalty, seed, maxExpanded, stateSpace: (water ? 6 : 3) ** (rows * 2), variants: variants.map((v) => v.key) },
     run(i) {
       const cells = model.random(probs, seededRng(Math.imul(seed, 0x9e3779b1) + i));
       const base = makeProblem(model, model.initial(cells), 'gap');
       base.warm(maxExpanded);
-      const runs = VARIANTS.map((v) => slim(model, search(v.algo, base.using(v.h || 'zero'), { maxExpanded: Math.min(maxExpanded, v.maxExpanded ?? Infinity) })));
+      const runs = variants.map((v) => slim(model, search(v.algo, base.using(v.h || 'zero'), { maxExpanded: Math.min(maxExpanded, v.maxExpanded ?? Infinity) })));
       // Reference optimum: any exact algorithm that finished (one of them may hit the expansion limit).
       const best = exactIndexes.map((k) => runs[k]).find((r) => r.found);
       return { key: base.start, opt: best ? best.cost : null, steps: best ? best.steps : 0, sides: best ? best.sides : 0, runs };
@@ -367,14 +410,15 @@ export function createRunner(cfg = {}) {
 }
 
 /** Merge records (from one or many runners) into the final report. */
-export function createCollector() {
-  const collector = new Collector(VARIANTS);
+export function createCollector(cfg) {
+  const variants = variantsOf(cfg);
+  const collector = new Collector(variants);
   let mismatches = 0;
   return {
     add(rec) {
       const opt = rec.opt === null ? Infinity : rec.opt;
       for (const r of rec.runs) if (r.cost === null) r.cost = Infinity; // Infinity does not survive JSON
-      VARIANTS.forEach((v, k) => {
+      variants.forEach((v, k) => {
         const exact = ALGORITHMS[v.algo].optimal && HEURISTICS[v.h || 'zero'].admissible;
         if (exact && !rec.runs[k].aborted && rec.runs[k].cost !== opt) mismatches++;
       });
@@ -390,7 +434,7 @@ export function createCollector() {
 export function analyze(cfg = {}, onProgress = () => {}) {
   const t0 = now();
   const runner = createRunner(cfg);
-  const collector = createCollector();
+  const collector = createCollector(cfg);
   const total = runner.ids.length;
   const every = runner.meta.kind === 'random' ? 8 : 256;
   for (let n = 0; n < total; n++) {

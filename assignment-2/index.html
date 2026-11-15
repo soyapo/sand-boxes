@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en" data-app="2">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sand Boxes 2 — heuristic functions for informed search</title>
+  <meta name="description" content="Assignment 2 on the Sand Boxes puzzle: a heuristic designed by relaxation with a proof of admissibility, a heuristic learned by linear regression, and A* and RBFS evaluated with the effective branching factor over all 59,049 initial states.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231f6f8b'/%3E%3Crect x='6' y='6' width='9' height='9' rx='1.5' fill='%23e0b45c'/%3E%3Crect x='17' y='6' width='9' height='9' rx='1.5' fill='%2315505f'/%3E%3Crect x='6' y='17' width='9' height='9' rx='1.5' fill='%2315505f'/%3E%3Crect x='17' y='21.5' width='9' height='4.5' rx='1.5' fill='%23e0b45c'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" style="fill: var(--accent)"/>
+        <rect x="6" y="6" width="9" height="9" rx="1.5" class="logo-sand"/>
+        <rect x="17" y="6" width="9" height="9" rx="1.5" style="fill: rgba(0,0,0,0.35)"/>
+        <rect x="6" y="17" width="9" height="9" rx="1.5" style="fill: rgba(0,0,0,0.35)"/>
+        <rect x="17" y="21.5" width="9" height="4.5" rx="1.5" class="logo-sand"/>
+      </svg>
+      <div>
+        <h1>Sand Boxes <span class="part">Assignment 2</span></h1>
+        <p>Heuristic functions for informed search · <a class="switch" href="../">all projects</a></p>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button role="tab" id="tabbtn-explore" aria-controls="tab-explore" aria-selected="true">Heuristics</button>
+      <button role="tab" id="tabbtn-learned" aria-controls="tab-learned" aria-selected="false">Learned</button>
+      <button role="tab" id="tabbtn-eval" aria-controls="tab-eval" aria-selected="false">Evaluation</button>
+      <button role="tab" id="tabbtn-design" aria-controls="tab-design" aria-selected="false">Design</button>
+    </nav>
+    <button id="themeToggle" class="icon-btn" title="Switch light / dark theme" aria-label="Switch light / dark theme">◐</button>
+  </header>
+
+  <main>
+    <!-- ============================================================ EXPLORER -->
+    <section id="tab-explore" role="tabpanel" aria-labelledby="tabbtn-explore">
+      <div class="sim-grid">
+        <aside class="card setup">
+          <h2>State</h2>
+          <div class="field row">
+            <span class="label">Rows</span>
+            <div class="stepper">
+              <button id="rowsMinus" aria-label="Fewer rows">−</button>
+              <output id="rowsOut">5</output>
+              <button id="rowsPlus" aria-label="More rows">+</button>
+            </div>
+            <span class="hint" id="spaceHint"></span>
+          </div>
+          <div class="btn-row">
+            <button id="btnRandom" class="btn primary">Random grid</button>
+            <button id="btnClear" class="btn">Clear</button>
+          </div>
+          <div class="field">
+            <label class="label" for="preset">Examples</label>
+            <select id="preset"></select>
+          </div>
+          <div class="field">
+            <span class="label">Paint boxes <span class="hint">pick, then click a box</span></span>
+            <div class="brushes" id="brushes"></div>
+          </div>
+          <div class="field">
+            <label class="label" for="gridText">Grid as text <span class="hint">0 ½ 1</span></label>
+            <div class="inline">
+              <input id="gridText" type="text" spellcheck="false" autocomplete="off">
+              <button id="btnLoadText" class="btn small">Load</button>
+            </div>
+            <p class="error" id="gridError" hidden></p>
+          </div>
+          <p class="hint">Click a gate on the board to open it and watch every heuristic react; open gates stay open while sand is above them.</p>
+        </aside>
+
+        <div class="card board-card">
+          <div class="board-head">
+            <div class="tiles">
+              <div class="tile"><span>Cost so far</span><b id="statCost">0</b></div>
+              <div class="tile"><span>Actions</span><b id="statSteps">0</b></div>
+              <div class="tile"><span>h* from here</span><b id="statOpt">…</b></div>
+            </div>
+            <div class="status" id="status" role="status" aria-live="polite"></div>
+          </div>
+          <p class="step-note" id="stepNote" aria-live="polite"></p>
+          <div class="board-wrap" id="boardWrap">
+            <canvas id="board" aria-label="Sand box grid"></canvas>
+            <div class="tip" id="boardTip" hidden></div>
+          </div>
+          <div class="player">
+            <button class="icon-btn" id="plFirst" title="Back to the start" aria-label="Back to the start">⏮</button>
+            <button class="icon-btn" id="plPrev" title="Step back" aria-label="Step back">◀</button>
+            <button class="btn primary play" id="plPlay">▶ Play</button>
+            <button class="icon-btn" id="plNext" title="Step forward" aria-label="Step forward">▶</button>
+            <button class="icon-btn" id="plLast" title="Jump to the end" aria-label="Jump to the end">⏭</button>
+            <label class="speed">Speed
+              <select id="speed">
+                <option value="0.5">0.5×</option>
+                <option value="1" selected>1×</option>
+                <option value="2">2×</option>
+                <option value="4">4×</option>
+              </select>
+            </label>
+          </div>
+          <div class="field">
+            <span class="label">Open a gate <span class="hint">the number is its cost</span></span>
+            <div class="actions" id="actions"></div>
+          </div>
+        </div>
+
+        <aside class="card solver">
+          <h2>Heuristic values here</h2>
+          <p class="sub">Each bar is drawn against the true cost-to-go h*, computed by A* with h₂.</p>
+          <div class="hbars" id="hvalues"></div>
+          <details style="margin-top:12px">
+            <summary>Features of this state (inputs of the learned heuristic)</summary>
+            <div class="table-wrap"><table class="data compact feat" id="features"></table></div>
+          </details>
+
+          <h3>Run an informed search from here</h3>
+          <div class="field">
+            <label class="label" for="algo">Algorithm</label>
+            <select id="algo"></select>
+          </div>
+          <div class="field">
+            <label class="label" for="heur">Heuristic</label>
+            <select id="heur"></select>
+            <p class="hint" id="heurHint"></p>
+          </div>
+          <div class="btn-row">
+            <button id="btnSolve" class="btn primary">Solve</button>
+            <button id="btnCompare" class="btn">Compare heuristics</button>
+          </div>
+          <div id="solveResult" class="result" hidden></div>
+          <h3>Plan <span class="hint" id="timelineHint"></span></h3>
+          <ol class="timeline" id="timeline"></ol>
+        </aside>
+      </div>
+
+      <div class="card" id="compareCard" hidden>
+        <h2>Every heuristic on this state</h2>
+        <p class="sub">Same start, same algorithm family; the effective branching factor b* solves 1 + b + b² + … + b^d = N + 1 with N the states generated and d the plan length. Click a row to load its plan.</p>
+        <div class="table-wrap"><table class="data" id="compareTable"></table></div>
+      </div>
+    </section>
+
+    <!-- ============================================================= LEARNED -->
+    <section id="tab-learned" role="tabpanel" aria-labelledby="tabbtn-learned" hidden>
+      <div id="learnedBody" class="prose-grid"></div>
+    </section>
+
+    <!-- ========================================================== EVALUATION -->
+    <section id="tab-eval" role="tabpanel" aria-labelledby="tabbtn-eval" hidden>
+      <div id="evalBody" style="display:grid;gap:18px"></div>
+    </section>
+
+    <!-- ============================================================== DESIGN -->
+    <section id="tab-design" role="tabpanel" aria-labelledby="tabbtn-design" hidden>
+      <div class="prose-grid">
+        <article class="card prose">
+          <h2>What this project adds</h2>
+          <p>Assignment 1 built the environment and compared the search algorithms. This project is about the <b>heuristic function</b>: how to design one you can prove things about, how to learn one from data, and what each buys an informed search. The environment, A* and RBFS are shared with Assignment 1 (the rules are summarised in its <a href="../assignment-1/#rules">Rules</a> tab).</p>
+          <ul>
+            <li><b>Designed by relaxation</b>, with a proof: h₁ (columns) and h₂ (closed gates).</li>
+            <li><b>Learned by linear regression</b> on every reachable state of the 5×2 grid: h₄, and its safe version h₅.</li>
+            <li><b>Evaluated</b> with A* and RBFS on all 59,049 initial states: effective branching factor b*, states expanded, time, and the quality of the plans; plus the histogram of <code>Greedy_opt_ratio</code> and the two scatter plots.</li>
+          </ul>
+
+          <h2>h₂ by relaxation, with proof</h2>
+          <p><b>Observation.</b> A side gate moves half a box into the other column and leaves half behind. So sand that is above a top-down gate <em>g</em> in a column can only leave that column by passing <em>g</em>: however many side gates are used, at least half a box of it stays in the column above <em>g</em> until <em>g</em> lets it through. And a top-down gate opens in exactly one way: by a paid action on that very gate, taken while a box with sand sits above it, which costs <code>1 + 4·(s + s′)</code> with <code>s ≥ ½</code>, so at least <b>3</b>.</p>
+          <div class="proof">
+            <p><b>Relaxed problem.</b> Keep only the gates: the state is the set <em>G</em> of closed top-down gates that have sand above them in their column. The only action is “open one gate of <em>G</em>” at cost 3, and the goal is <em>G</em> = ∅. Its optimal cost is clearly <b>3·|G|</b>, which we call h₂.</p>
+            <p><b>Admissibility.</b> Take any solution of the real problem from a state with gate set <em>G</em>. Every gate <em>g</em> ∈ <em>G</em> is opened by some action of that solution: the sand above <em>g</em> must pass <em>g</em> to reach the goal, and only an action on <em>g</em> opens it. That action costs at least 3, and different gates need different actions. Dropping all other actions of the solution gives a solution of the relaxed problem of cost ≤ the real cost. Hence h₂ ≤ h* in every state.</p>
+            <p><b>Consistency.</b> A top-down action on a gate of <em>G</em> costs at least 3 and can remove at most that one gate from <em>G</em> (sand only moves down through open gates, so no other closed gate loses the sand above it); any other action costs at least 1 and removes nothing. So h₂(n) ≤ c(n, n′) + h₂(n′) for every transition.</p>
+            <p><b>h₁</b> is the same argument applied to whole columns instead of gates: each column that holds sand still needs one paid action of its own, so 3 per column. It is weaker but also admissible, consistent, and valid with water (where concreting sand counts as that action).</p>
+          </div>
+          <p>Both bounds are also checked mechanically: the test-suite compares them with h* on <b>every</b> reachable state and every transition of the 1×2 … 5×2 grids (326,041 states and 2.3 million transitions for 5×2). A bound by the amount of sand — the natural first idea — fails this check, because one outlet action can drain a whole column once its gates are open.</p>
+        </article>
+
+        <article class="card prose">
+          <h2>h₄ by linear regression</h2>
+          <p>Value iteration over the whole state graph gives the exact cost-to-go h* of all 326,040 non-goal reachable states of the 5×2 grid. We describe each state by 13 counts (sand, columns with sand, closed gates with sand above them, full and half boxes, fall distance, …) and fit <code>h* ≈ w · features</code> by ordinary least squares. The <a href="#learned">Learned</a> tab shows the coefficients, the fit and the errors.</p>
+          <p>The result is accurate on average (R² ≈ 0.92, typical error ≈ 2) but it <em>overestimates on about half of the states</em>, so A* with h₄ is fast but not guaranteed optimal. Two repairs are compared:</p>
+          <ul>
+            <li><b>h₅ = max(h₂, h₄ − δ)</b>, where δ is the largest overestimate on the training states. By construction h₅ never exceeds h* on a training state and is never worse than the proven h₂; on unseen states it is not guaranteed.</li>
+            <li>Simply accepting h₄ and measuring how far from optimal its plans are.</li>
+          </ul>
+          <p>A model trained on the 4×2 grid and tested on 5×2 shows how far the features generalise (R² ≈ 0.83, but it overestimates three quarters of the states).</p>
+
+          <h2>Effective branching factor</h2>
+          <p>For a search that generates <em>N</em> states and returns a plan of <em>d</em> actions, b* is the branching factor of the uniform tree of depth <em>d</em> with <em>N</em> + 1 nodes: the root of <code>1 + b + b² + … + b^d = N + 1</code>. A heuristic is better the closer it pushes b* to 1; the <a href="#eval">Evaluation</a> tab gives it per heuristic and per state.</p>
+
+          <h2>Documents</h2>
+          <ul>
+            <li><a href="../docs/a2-heuristic-design.md">Heuristic design: relaxation, proof, regression</a> (<a href="../docs/a2-heuristic-design.fa.md">فارسی</a>)</li>
+            <li><a href="../docs/a2-report.md">Execution and evaluation report</a> (<a href="../docs/a2-report.fa.md">فارسی</a>)</li>
+            <li><a href="../README.md">How to run, scripts, structure</a></li>
+          </ul>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>Sand Boxes, Assignment 2 — course project, Artificial Intelligence.</span>
+    <span><a href="../assignment-1/">← Assignment 1: search algorithms</a></span>
+  </footer>
+
+  <script type="module" src="../js/ui/app2.js"></script>
+</body>
+</html>

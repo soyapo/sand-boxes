@@ -1,13 +1,14 @@
 # Sand Boxes
 
-A two-column gravity puzzle, modelled as a state-space search problem and solved with the greedy
-approach from class and nine search algorithms — with an animated simulator, a solver you can
-watch, and a full benchmark over every one of the 59,049 initial states of the 5×2 grid.
+Two course projects on one puzzle — a two-column tower of sand boxes with spring-loaded gates — as a
+static site with no build step and no dependencies, hosted on GitHub Pages.
 
-Everything runs in the browser as a static site (no build step, no dependencies), so it can be
-hosted on GitHub Pages as is.
+**Live site:** <https://soyapo.github.io/sand-boxes/> (a selection page) · **Repository:** <https://github.com/soyapo/sand-boxes>
 
-**Live site:** <https://soyapo.github.io/sand-boxes/> · **Repository:** <https://github.com/soyapo/sand-boxes>
+| | | |
+|---|---|---|
+| **Assignment 1** | [soyapo.github.io/sand-boxes/assignment-1/](https://soyapo.github.io/sand-boxes/assignment-1/) | The environment, the greedy approach from class, the four uninformed searches and the informed ones, compared on every one of the 59,049 initial states. |
+| **Assignment 2** | [soyapo.github.io/sand-boxes/assignment-2/](https://soyapo.github.io/sand-boxes/assignment-2/) | Heuristic functions: one designed by relaxation with a proof of admissibility, one learned by linear regression, and their effect on A* and RBFS measured with the effective branching factor. |
 
 ![The simulator replaying the optimal plan for the assignment's example: two gates in the right column are open, and the cost of the current step is explained](docs/screenshots/simulator.jpg)
 
@@ -15,7 +16,13 @@ hosted on GitHub Pages as is.
 
 ![Time per algorithm on a logarithmic axis, with the full comparison table](docs/screenshots/time-and-memory.jpg)
 
+![Assignment 2: the heuristic explorer with two open gates, the values of h* and of every heuristic for the current state](docs/screenshots/a2-explorer.jpg)
+
+![Assignment 2: effective branching factor per heuristic over all 59,049 states](docs/screenshots/a2-evaluation.jpg)
+
 ## What is in the box
+
+### Assignment 1 — search algorithms
 
 | | |
 |---|---|
@@ -24,6 +31,15 @@ hosted on GitHub Pages as is.
 | **Analysis** | For all 3¹⁰ = 59,049 initial states: histogram of `Greedy_opt_ratio`, scatter of greedy cost against the optimum, scatter of actions against side-gate actions, time and memory of every algorithm, and a check of the claim that the greedy approach is optimal when every gate costs one unit. Click any point to open an example in the simulator. New analyses can be run in the browser. |
 | **Water variant** | The proposed extension: water, concrete that blocks a box for good, +10 per concrete box, goal "no sand left". Same simulator, same solvers, benchmarked on 1,000 random instances. |
 | **Rules** | The problem statement, the worked example from the assignment, and a summary of algorithms and heuristics. |
+
+### Assignment 2 — heuristic functions
+
+| | |
+|---|---|
+| **Heuristics** | A heuristic explorer: pick or paint a state, open gates by hand, and see h*, the relaxed bounds h₁ and h₂, the fall distance h₃ and the learned h₄ / h₅ side by side, with the 13 features that feed the learned one. Run A* or RBFS from the state with any heuristic and read off the effective branching factor; compare all of them on that state. |
+| **Learned** | The linear-regression model: coefficients, fit quality (R², errors, how often it overestimates), the safe version h₅ = max(h₂, h₄ − δ), the 4×2 → 5×2 transfer, and scatter plots of each heuristic against h*. |
+| **Evaluation** | On all 59,049 initial states: b* per heuristic and algorithm, plan quality, effort, the `Greedy_opt_ratio` histogram and the two scatter plots. |
+| **Design** | The relaxation, the proof of admissibility and consistency, and how b* is computed. |
 
 ## Team and how this was built
 
@@ -52,6 +68,8 @@ and the write-up, all of which we reviewed.
 | Description of the original problem | [docs/01-problem-original.md](docs/01-problem-original.md) · [فارسی](docs/01-problem-original.fa.md) |
 | Description of the proposed form of the problem | [docs/02-problem-water-variant.md](docs/02-problem-water-variant.md) · [فارسی](docs/02-problem-water-variant.fa.md) |
 | Execution report and evaluation of the search algorithms | [docs/03-report.md](docs/03-report.md) · [فارسی](docs/03-report.fa.md) |
+| **Assignment 2:** heuristic design by relaxation (with proof) and by linear regression | [docs/a2-heuristic-design.md](docs/a2-heuristic-design.md) · [فارسی](docs/a2-heuristic-design.fa.md) |
+| **Assignment 2:** execution report — b*, histogram, scatter plots, learned heuristic | [docs/a2-report.md](docs/a2-report.md) · [فارسی](docs/a2-report.fa.md) |
 | Full text of the chats with the AI model | [chats/](chats/) |
 
 Bonus items: graphical animation of the solution (Simulator tab), optimal solutions for all 59,049
@@ -91,10 +109,22 @@ node scripts/solve.mjs "1 0 / 0 1 / 0 1 / 1 0" --algo sweep
 ```
 
 Regenerate the datasets shown in the Analysis tab (uses worker threads; the 59,049-state run takes
-roughly half an hour on four cores, dominated by IDA*, RBFS and IDS):
+about an hour on four cores, dominated by IDA*, RBFS and UCS):
 
 ```bash
 npm run analyze
+```
+
+Train the learned heuristic of Assignment 2 (writes `js/core/learned.js` and `data/a2-regression.json`, a few seconds):
+
+```bash
+npm run learn
+```
+
+Regenerate the Assignment 2 evaluation only (about half an hour):
+
+```bash
+node scripts/analyze.mjs --only a2-5x2.json
 ```
 
 A single custom run, for instance a sample with another door rule:
@@ -116,14 +146,19 @@ file tells GitHub Pages to serve the files untouched.
 ## Project layout
 
 ```
-index.html              the page (three tabs: Simulator, Analysis, Rules)
-css/style.css           styles, light and dark theme
+index.html              selection page: Assignment 1 or Assignment 2
+assignment-1/index.html Assignment 1 (three tabs: Simulator, Analysis, Rules)
+assignment-2/index.html Assignment 2 (Heuristics, Learned, Evaluation, Design)
+css/style.css           styles, light and dark theme, the two accents
 js/core/model.js        state, physics, actions, cost function (sand, water, concrete)
 js/core/search.js       greedy approach, BFS, DFS, IDS, UCS, A*, RBFS, IDA*, Weighted A*, greedy best-first
-js/core/heuristics.js   h₀ zero, h₁ sand volume, h₂ volume + gates, h₃ fall distance
+js/core/heuristics.js   h₀ zero, h₁ columns, h₂ closed gates, h₃ fall distance, h₄ regression, h₅ regression made safe
+js/core/features.js     the 13 state features of the learned heuristic
+js/core/learned.js      coefficients of the learned heuristic (written by scripts/learn-heuristic.mjs)
 js/core/problem.js      glue between model and search (memoised successors)
 js/core/analysis.js     batch evaluation: transition table, optimal costs, statistics
-js/ui/app.js            simulator and solver panel
+js/ui/app.js            Assignment 1: simulator and solver panel
+js/ui/app2.js           Assignment 2: heuristic explorer, learned model, evaluation
 js/ui/board.js          canvas rendering and animation
 js/ui/charts.js         SVG charts (histogram, bubble scatter, dot plot, lines)
 js/ui/analysis-ui.js    Analysis tab, live runs in web workers
@@ -131,8 +166,9 @@ js/worker.js            background worker (single searches and batches)
 scripts/serve.mjs       local static server              (npm start)
 scripts/solve.mjs       command-line solver              (npm run solve -- "...")
 scripts/analyze.mjs     batch evaluation, writes data/   (npm run analyze)
+scripts/learn-heuristic.mjs  linear regression of h* on the state features (npm run learn)
 scripts/figures.mjs     report figures (docs/figures) and tables from data/
-data/*.json             precomputed results read by the Analysis tab
+data/*.json             precomputed results (Assignment 1 datasets, a2-5x2.json, a2-regression.json)
 tests/sandbox.test.mjs  tests                            (npm test)
 docs/                   problem statements and report (English and Persian)
 chats/                  transcripts of the AI chats

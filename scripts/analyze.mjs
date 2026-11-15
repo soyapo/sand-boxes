@@ -3,6 +3,7 @@
 //
 //   node scripts/analyze.mjs                      regenerate every dataset listed in PRESETS
 //   node scripts/analyze.mjs --rows 5             all 3^10 = 59,049 sand-only states of a 5x2 grid
+//   node scripts/analyze.mjs --only a2-5x2.json   the Assignment 2 heuristic comparison only
 //   node scripts/analyze.mjs --rows 5 --sample 2000 --seed 7
 //   node scripts/analyze.mjs --random --water --rows 5 --count 1000
 //
@@ -13,7 +14,9 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
-import { createRunner, createCollector } from '../js/core/analysis.js';
+import { createRunner, createCollector, A2_VARIANTS } from '../js/core/analysis.js';
+
+const A2_KEYS = A2_VARIANTS.map((v) => v.key);
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -23,6 +26,8 @@ const PRESETS = [
   { file: 'exhaustive-4x2.json', title: '4×2 grid — all 6,561 states', cfg: { kind: 'exhaustive', rows: 4 } },
   { file: 'water-5x2.json', title: '5×2 grid with water — 1,000 random instances', cfg: { kind: 'random', rows: 5, water: true, count: 1000, seed: 1 } },
   { file: 'exhaustive-5x2.json', title: '5×2 grid — all 59,049 states', cfg: { kind: 'exhaustive', rows: 5 }, primary: true },
+  // Assignment 2: heuristics compared on every initial state (written to data/a2-5x2.json, not listed in index.json)
+  { file: 'a2-5x2.json', title: 'Assignment 2 — heuristics on all 59,049 states of 5×2', cfg: { kind: 'exhaustive', rows: 5, variants: A2_KEYS }, assignment2: true },
 ];
 
 function parseArgs(argv) {
@@ -42,7 +47,7 @@ function runParallel(cfg, workers) {
     const t0 = performance.now();
     const coordinator = createRunner(cfg); // only its ids and meta are used here
     const ids = coordinator.ids;
-    const collector = createCollector();
+    const collector = createCollector(cfg);
     const chunk = cfg.kind === 'random' ? 4 : 64;
     const n = Math.max(1, Math.min(workers, Math.ceil(ids.length / chunk)));
     let cursor = 0;
@@ -113,7 +118,7 @@ if (args.rows || args.random) {
   const only = args.only ? String(args.only).split(',') : null;
   const manifest = [];
   for (const preset of PRESETS) {
-    manifest.push({ file: preset.file, title: preset.title, primary: !!preset.primary });
+    if (!preset.assignment2) manifest.push({ file: preset.file, title: preset.title, primary: !!preset.primary });
     if (only && !only.includes(preset.file)) continue;
     console.log(`${preset.title} — ${workers} workers`);
     const result = await runParallel(preset.cfg, workers);

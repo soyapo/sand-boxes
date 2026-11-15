@@ -6,6 +6,8 @@ import { HEURISTICS } from '../core/heuristics.js';
 import { createRunner, createCollector } from '../core/analysis.js';
 import { columns, bubbles, dotPlot, lines, fmt } from './charts.js';
 
+/** The data folder, relative to this module rather than to the page, so any page can use it. */
+const DATA_DIR = new URL('../../data/', import.meta.url).href;
 const $ = (id) => document.getElementById(id);
 const el = (tag, props = {}, children = []) => {
   const node = Object.assign(document.createElement(tag), props);
@@ -29,8 +31,8 @@ export async function initAnalysis(h) {
   setupLiveControls();
   $('dataset').addEventListener('change', () => select($('dataset').value));
   try {
-    const index = await (await fetch('data/index.json')).json();
-    for (const d of index) addDataset(d.file, d.title, { url: `data/${d.file}` });
+    const index = await (await fetch(DATA_DIR + 'index.json')).json();
+    for (const d of index) addDataset(d.file, d.title, { url: DATA_DIR + d.file });
     await select(index[0].file);
   } catch (err) {
     $('analysisBody').replaceChildren(el('div', { className: 'card' }, [
