@@ -14,6 +14,7 @@ function pack(model, r) {
   return {
     found: r.found,
     aborted: r.aborted,
+    ga: r.ga || null,
     cost: r.found ? r.cost : null,
     path: r.path.map((e) => e.a),
     expanded: r.expanded,
@@ -35,7 +36,11 @@ self.onmessage = (e) => {
     const start = { cells: Uint8Array.from(m.cells), gates: m.gates || 0 }; // a state may come with open gates
     if (m.type === 'solve') {
       const base = makeProblem(model, start, m.heuristic);
-      const r = search(m.algo, base, { maxExpanded: LIMIT });
+      // the genetic algorithm reports every generation while it runs (m.stream), so the page can draw it live
+      const onGeneration = m.algo === 'ga' && m.stream
+        ? (info, population) => postMessage({ id: m.id, progress: { ...info, population: population.slice(0, 12).map((x) => ({ genes: x.genes, fitness: x.fitness, cost: x.cost, conflicts: x.conflicts, goal: x.goal, legal: x.legal })) } })
+        : null;
+      const r = search(m.algo, base, { maxExpanded: LIMIT, ga: m.ga, onGeneration });
       const algo = ALGORITHMS[m.algo];
       const exact = algo.optimal && (!algo.informed || HEURISTICS[m.heuristic].admissible);
       const ref = exact ? r : search('astar', base.using('gap'), { maxExpanded: LIMIT });
@@ -53,7 +58,7 @@ self.onmessage = (e) => {
         label: v.label,
         algo: v.algo,
         heuristic: v.h,
-        ...pack(model, search(v.algo, base.using(v.h || 'zero'), { maxExpanded: LIMIT })),
+        ...pack(model, search(v.algo, base.using(v.h || 'zero'), { maxExpanded: LIMIT, ga: v.ga ? { ...(m.ga || {}), ...v.ga } : undefined })),
       }));
       postMessage({ id: m.id, results });
     }

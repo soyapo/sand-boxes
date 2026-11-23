@@ -127,6 +127,30 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
+/* Assignment 3 (genetic algorithm) is green. */
+:root[data-app="3"] { --accent: #4f7a28; --accent-soft: #dfead1; --gate: #4f7a28; }
+@media (prefers-color-scheme: dark) { :root[data-app="3"]:not([data-theme="light"]) { --accent: #8fc457; --accent-soft: #223616; --gate: #8fc457; --accent-ink: #101a08; } }
+:root[data-app="3"][data-theme="dark"] { --accent: #8fc457; --accent-soft: #223616; --gate: #8fc457; --accent-ink: #101a08; }
+.params { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 12px; margin-bottom: 10px; }
+.params label { display: flex; flex-direction: column; gap: 3px; font-size: 12.5px; color: var(--ink-2); }
+.params label .hint { font-size: 11px; }
+.params input { width: 100%; }
+.check { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--ink-2); }
+.pbar { display: inline-flex; align-items: center; gap: 6px; min-width: 92px; justify-content: flex-end; }
+.pbar i { display: inline-block; height: 8px; width: 0; max-width: 56px; flex: 0 0 auto; border-radius: 999px; background: var(--accent); opacity: 0.8; }
+.seq { font-family: var(--mono); font-size: 12.5px; display: inline-flex; flex-wrap: wrap; gap: 3px; }
+.seq span { padding: 1px 5px; border-radius: 5px; background: var(--surface-2); }
+.seq span.head { background: var(--accent-soft); color: var(--ink); }
+.seq span.tail { background: color-mix(in srgb, var(--series-1) 22%, var(--surface)); }
+.seq span.fixed { background: color-mix(in srgb, var(--danger) 22%, var(--surface)); }
+.seq span.dim { opacity: 0.4; }
+.seq span.muted, .muted { color: var(--muted); }
+.ops { display: grid; grid-template-columns: max-content 1fr; gap: 8px 14px; align-items: baseline; margin: 10px 0; font-size: 13.5px; }
+.ops dt { color: var(--ink-2); }
+.ops dd { margin: 0; }
+.chip { display: inline-block; padding: 1px 7px; border-radius: 999px; background: var(--surface-2); font-size: 12.5px; margin: 0 3px 3px 0; }
+@media (max-width: 720px) { .ops { grid-template-columns: 1fr; } }
+
 /* Assignment 2 wears a different accent so the two apps are told apart at a glance. */
 :root[data-app="2"] { --accent: #1f6f8b; --accent-soft: #d6e9f0; --gate: #1f6f8b; }
 @media (prefers-color-scheme: dark) { :root[data-app="2"]:not([data-theme="light"]) { --accent: #5fb3cf; --accent-soft: #163340; --gate: #5fb3cf; --accent-ink: #0f1a1f; } }

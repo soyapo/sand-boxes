@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Sand Boxes — course projects</title>
-  <meta name="description" content="Two course projects on the Sand Boxes gravity puzzle: a comparison of search algorithms over every initial state, and the design and evaluation of heuristic functions for informed search.">
+  <meta name="description" content="Three course projects on the Sand Boxes gravity puzzle: a comparison of search algorithms over every initial state, the design and evaluation of heuristic functions for informed search, and a genetic algorithm over action sequences.">
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%231d1a14'/%3E%3Crect x='6' y='6' width='9' height='9' rx='1.5' fill='%23e0b45c'/%3E%3Crect x='17' y='6' width='9' height='9' rx='1.5' fill='%233a352b'/%3E%3Crect x='6' y='17' width='9' height='9' rx='1.5' fill='%233a352b'/%3E%3Crect x='17' y='21.5' width='9' height='4.5' rx='1.5' fill='%23e0b45c'/%3E%3C/svg%3E">
   <link rel="stylesheet" href="css/style.css">
   <style>
@@ -23,8 +23,9 @@
     .choice .go { font-weight: 600; color: var(--tone); }
     .choice.one { --tone: #a85f17; }
     .choice.two { --tone: #1f6f8b; }
-    @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .choice.one { --tone: #e3a550; } :root:not([data-theme="light"]) .choice.two { --tone: #5fb3cf; } }
-    :root[data-theme="dark"] .choice.one { --tone: #e3a550; } :root[data-theme="dark"] .choice.two { --tone: #5fb3cf; }
+    .choice.three { --tone: #4f7a28; }
+    @media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) .choice.one { --tone: #e3a550; } :root:not([data-theme="light"]) .choice.two { --tone: #5fb3cf; } :root:not([data-theme="light"]) .choice.three { --tone: #8fc457; } }
+    :root[data-theme="dark"] .choice.one { --tone: #e3a550; } :root[data-theme="dark"] .choice.two { --tone: #5fb3cf; } :root[data-theme="dark"] .choice.three { --tone: #8fc457; }
     .hub .team { margin-top: 40px; color: var(--muted); font-size: 13.5px; }
     .hub .team a { color: var(--ink-2); }
   </style>
@@ -32,7 +33,7 @@
 <body>
   <main class="hub">
     <h1>Sand Boxes</h1>
-    <p class="lead">Two course projects on the same puzzle: a tower of boxes filled with sand, spring-loaded gates, and the question of how to empty it at the lowest cost. Pick a project.</p>
+    <p class="lead">Three course projects on the same puzzle: a tower of boxes filled with sand, spring-loaded gates, and the question of how to empty it at the lowest cost. Pick a project.</p>
     <div class="choices">
       <a class="choice one" href="assignment-1/">
         <span class="num">Assignment 1</span>
@@ -57,6 +58,18 @@
           <li>Histogram and scatter plots for the greedy approach</li>
         </ul>
         <span class="go">Open Assignment 2 →</span>
+      </a>
+      <a class="choice three" href="assignment-3/">
+        <span class="num">Assignment 3</span>
+        <h2>Genetic algorithm over action sequences</h2>
+        <p>Problem, Environment and Solver agent; individuals that are sequences of gate actions; the fitness <code>large_number − conflict_numbers − path_cost</code>; crossover, mutation and selection designed for legality.</p>
+        <ul>
+          <li>Watch a population evolve, generation by generation, on any state</li>
+          <li>The operators step by step: fitness, selection probabilities, crossover, mutation</li>
+          <li>Every variant evaluated against the optimum on all 59,049 initial states</li>
+          <li>Histogram of <code>GA_opt_ratio</code> and the two scatter plots</li>
+        </ul>
+        <span class="go">Open Assignment 3 →</span>
       </a>
     </div>
     <p class="team">Artificial Intelligence course projects by <a href="https://github.com/soyapo">soyapo</a> and <a href="https://github.com/kia8506">Kia Sheikhi</a>. Source, documents and reports: <a href="https://github.com/soyapo/sand-boxes">github.com/soyapo/sand-boxes</a>.</p>

@@ -1,0 +1,254 @@
+<!doctype html>
+<html lang="en" data-app="3">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sand Boxes 3 — genetic algorithm over action sequences</title>
+  <meta name="description" content="Assignment 3 on the Sand Boxes puzzle: a genetic algorithm whose individuals are sequences of gate actions, with the fitness large_number − conflict_numbers − path_cost, legality-preserving crossover and mutation, fitness-proportional selection, and its evaluation against the optimum on all 59,049 initial states.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%234f7a28'/%3E%3Crect x='6' y='6' width='9' height='9' rx='1.5' fill='%23e0b45c'/%3E%3Crect x='17' y='6' width='9' height='9' rx='1.5' fill='%23355419'/%3E%3Crect x='6' y='17' width='9' height='9' rx='1.5' fill='%23355419'/%3E%3Crect x='17' y='21.5' width='9' height='4.5' rx='1.5' fill='%23e0b45c'/%3E%3C/svg%3E">
+  <link rel="stylesheet" href="../css/style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <svg class="logo" viewBox="0 0 32 32" aria-hidden="true">
+        <rect width="32" height="32" rx="7" style="fill: var(--accent)"/>
+        <rect x="6" y="6" width="9" height="9" rx="1.5" class="logo-sand"/>
+        <rect x="17" y="6" width="9" height="9" rx="1.5" style="fill: rgba(0,0,0,0.35)"/>
+        <rect x="6" y="17" width="9" height="9" rx="1.5" style="fill: rgba(0,0,0,0.35)"/>
+        <rect x="17" y="21.5" width="9" height="4.5" rx="1.5" class="logo-sand"/>
+      </svg>
+      <div>
+        <h1>Sand Boxes <span class="part">Assignment 3</span></h1>
+        <p>Genetic algorithm over action sequences · <a class="switch" href="../">all projects</a></p>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist" aria-label="Sections">
+      <button role="tab" id="tabbtn-evolve" aria-controls="tab-evolve" aria-selected="true">Evolve</button>
+      <button role="tab" id="tabbtn-operators" aria-controls="tab-operators" aria-selected="false">Operators</button>
+      <button role="tab" id="tabbtn-eval" aria-controls="tab-eval" aria-selected="false">Evaluation</button>
+      <button role="tab" id="tabbtn-design" aria-controls="tab-design" aria-selected="false">Design</button>
+    </nav>
+    <button id="themeToggle" class="icon-btn" title="Switch light / dark theme" aria-label="Switch light / dark theme">◐</button>
+  </header>
+
+  <main>
+    <!-- ============================================================== EVOLVE -->
+    <section id="tab-evolve" role="tabpanel" aria-labelledby="tabbtn-evolve">
+      <div class="sim-grid">
+        <aside class="card setup">
+          <h2>Start state</h2>
+          <div class="field row">
+            <span class="label">Rows</span>
+            <div class="stepper">
+              <button id="rowsMinus" aria-label="Fewer rows">−</button>
+              <output id="rowsOut">5</output>
+              <button id="rowsPlus" aria-label="More rows">+</button>
+            </div>
+            <span class="hint" id="spaceHint"></span>
+          </div>
+          <div class="btn-row">
+            <button id="btnRandom" class="btn primary">Random grid</button>
+            <button id="btnClear" class="btn">Clear</button>
+          </div>
+          <div class="field">
+            <label class="label" for="preset">Examples</label>
+            <select id="preset"></select>
+          </div>
+          <div class="field">
+            <span class="label">Paint boxes <span class="hint">pick, then click a box</span></span>
+            <div class="brushes" id="brushes"></div>
+          </div>
+          <div class="field">
+            <label class="label" for="gridText">Grid as text <span class="hint">0 ½ 1</span></label>
+            <div class="inline">
+              <input id="gridText" type="text" spellcheck="false" autocomplete="off">
+              <button id="btnLoadText" class="btn small">Load</button>
+            </div>
+            <p class="error" id="gridError" hidden></p>
+          </div>
+
+          <h2>Parameters</h2>
+          <div class="params" id="params">
+            <label>Population <input id="pPopulation" type="number" min="4" max="1000" step="1" value="60"></label>
+            <label>Generations <input id="pGenerations" type="number" min="1" max="5000" step="1" value="150"></label>
+            <label>Max length <input id="pMaxLength" type="number" min="1" max="60" step="1" value="20"></label>
+            <label>Elite kept <input id="pElite" type="number" min="0" max="50" step="1" value="2"></label>
+            <label>Crossover rate <input id="pCrossover" type="number" min="0" max="1" step="0.05" value="0.9"></label>
+            <label>Mutation rate <input id="pMutation" type="number" min="0" max="1" step="0.05" value="0.3"></label>
+            <label>Stop after <span class="hint">gens without improvement, 0 = never</span> <input id="pStagnation" type="number" min="0" max="5000" step="1" value="50"></label>
+            <label>Seed <input id="pSeed" type="number" min="0" max="999999" step="1" value="1"></label>
+          </div>
+          <div class="field">
+            <label class="label" for="pSelection">Selection</label>
+            <select id="pSelection"></select>
+            <p class="hint" id="selectionHint"></p>
+          </div>
+          <div class="field">
+            <label class="label" for="pFitness">Fitness</label>
+            <select id="pFitness"></select>
+            <p class="hint" id="fitnessHint"></p>
+          </div>
+          <div class="field">
+            <label class="label" for="pConflicts">conflict_numbers</label>
+            <select id="pConflicts"></select>
+            <p class="hint" id="conflictsHint"></p>
+          </div>
+          <div class="field row">
+            <label>Weight <input id="pWeight" type="number" min="0" max="100" step="0.1" value="9" style="width:80px"></label>
+            <label class="check"><input id="pRepair" type="checkbox" checked> Repair illegal actions</label>
+          </div>
+        </aside>
+
+        <div class="card board-card">
+          <div class="board-head">
+            <div class="tiles">
+              <div class="tile"><span>Best solution</span><b id="statBest">—</b></div>
+              <div class="tile"><span>Optimum (A*)</span><b id="statOpt">…</b></div>
+              <div class="tile"><span>Generation</span><b id="statGen">0</b></div>
+              <div class="tile"><span>Evaluations</span><b id="statEvals">0</b></div>
+            </div>
+            <div class="status" id="status" role="status" aria-live="polite"></div>
+          </div>
+          <p class="step-note" id="stepNote" aria-live="polite"></p>
+          <div class="board-wrap" id="boardWrap">
+            <canvas id="board" aria-label="Sand box grid"></canvas>
+            <div class="tip" id="boardTip" hidden></div>
+          </div>
+          <div class="player">
+            <button class="icon-btn" id="plFirst" title="Back to the start" aria-label="Back to the start">⏮</button>
+            <button class="icon-btn" id="plPrev" title="Step back" aria-label="Step back">◀</button>
+            <button class="btn primary play" id="plPlay">▶ Play</button>
+            <button class="icon-btn" id="plNext" title="Step forward" aria-label="Step forward">▶</button>
+            <button class="icon-btn" id="plLast" title="Jump to the end" aria-label="Jump to the end">⏭</button>
+            <label class="speed">Speed
+              <select id="speed">
+                <option value="0.5">0.5×</option>
+                <option value="1" selected>1×</option>
+                <option value="2">2×</option>
+                <option value="4">4×</option>
+              </select>
+            </label>
+          </div>
+          <div class="field">
+            <span class="label">Open a gate by hand <span class="hint">the number is its cost</span></span>
+            <div class="actions" id="actions"></div>
+          </div>
+        </div>
+
+        <aside class="card solver">
+          <h2>Run the genetic algorithm</h2>
+          <p class="sub">Every individual is a sequence of gate actions from the start state. fitness = <code>large_number − weight · conflict_numbers − path_cost</code>; see the <a href="#design">Design</a> tab.</p>
+          <div class="btn-row">
+            <button id="btnEvolve" class="btn primary">Evolve</button>
+            <button id="btnCompare" class="btn">Compare with A* and greedy</button>
+          </div>
+          <label class="speed" style="margin-top:8px">Playback
+            <select id="pace">
+              <option value="25">25 generations / s</option>
+              <option value="60" selected>60 generations / s</option>
+              <option value="0">instant</option>
+            </select>
+          </label>
+          <div id="solveResult" class="result" hidden></div>
+          <h3>Best plan <span class="hint" id="timelineHint"></span></h3>
+          <ol class="timeline" id="timeline"></ol>
+        </aside>
+      </div>
+
+      <div class="chart-grid" id="liveCards" hidden>
+        <div class="card chart-card">
+          <div class="chart-head"><div><h2>Fitness per generation</h2><p class="sub">Best, mean and worst fitness of the population; the grey line is <code>large_number − optimum</code>, the fitness of an optimal plan.</p></div></div>
+          <div id="fitnessChart"></div>
+        </div>
+        <div class="card chart-card">
+          <div class="chart-head"><div><h2>Cost of the best solution found</h2><p class="sub">Cheapest goal path seen so far, against the optimum from A*; and the share of the population that reaches the goal.</p></div></div>
+          <div id="costChart"></div>
+        </div>
+        <div class="card chart-card wide">
+          <div class="chart-head"><div><h2>Population <span class="hint" id="popHint"></span></h2><p class="sub">The twelve fittest individuals of the generation shown, with their selection probability under the chosen method. Click one to load it on the board.</p></div></div>
+          <div class="table-wrap"><table class="data compact" id="popTable"></table></div>
+        </div>
+      </div>
+
+      <div class="card" id="compareCard" hidden>
+        <h2>The genetic algorithm against the other approaches on this state</h2>
+        <p class="sub">Same start state. For the genetic algorithm, “expanded” counts fitness evaluations and “generated” counts actions applied in the environment. Click a row to load its plan.</p>
+        <div class="table-wrap"><table class="data" id="compareTable"></table></div>
+      </div>
+    </section>
+
+    <!-- =========================================================== OPERATORS -->
+    <section id="tab-operators" role="tabpanel" aria-labelledby="tabbtn-operators" hidden>
+      <div id="operatorsBody" class="prose-grid"></div>
+    </section>
+
+    <!-- ========================================================== EVALUATION -->
+    <section id="tab-eval" role="tabpanel" aria-labelledby="tabbtn-eval" hidden>
+      <div id="evalBody" style="display:grid;gap:18px"></div>
+    </section>
+
+    <!-- ============================================================== DESIGN -->
+    <section id="tab-design" role="tabpanel" aria-labelledby="tabbtn-design" hidden>
+      <div class="prose-grid">
+        <article class="card prose">
+          <h2>What this project adds</h2>
+          <p>Assignments 1 and 2 searched the <em>state space</em>: a frontier of states, expanded one at a time. This project searches the space of <em>plans</em> with a genetic algorithm: a population of whole action sequences that is improved by selection, crossover and mutation. The environment, the cost function and the heuristics are shared with the other two projects (rules in Assignment 1’s <a href="../assignment-1/#rules">Rules</a> tab).</p>
+          <p>The brief asks for the following pieces; each maps to a named class or function in <code>js/core/genetic.js</code>.</p>
+          <table class="data compact">
+            <thead><tr><th>Asked for</th><th>Here</th></tr></thead>
+            <tbody>
+              <tr><td>Three classes: Problem, Environment, Solver agent</td><td><code>Problem</code> (start, goal test, actions, length bound, conflict_numbers, large_number), <code>Environment</code> (applies actions, reports cost and legality, replays a path), <code>SolverAgent</code> (the genetic algorithm)</td></tr>
+              <tr><td>A state is the sequence of actions from the start, with a fixed maximum length</td><td>An individual is an array of action ids; <code>maxLength</code> bounds it (20 by default: longer than any optimal plan of the 5×2 grid, which needs at most 18)</td></tr>
+              <tr><td><code>successful_path</code> → true / false</td><td><code>successfulPath(problem, env, genes)</code>: replay and test the goal</td></tr>
+              <tr><td><code>fitness</code> with large_number, conflict_numbers, path_cost; 0 for an illegal action</td><td><code>fitness(...)</code>; three forms below, all with those three variables</td></tr>
+              <tr><td>conflict_numbers: a heuristic estimate of the distance to the goal</td><td><code>Problem.conflictNumbers(s)</code>: seven choices, the default counts the closed gates that still have sand above them</td></tr>
+              <tr><td>Mutation and crossover</td><td><code>SolverAgent.mutate</code>, <code>SolverAgent.crossover</code>: one-point crossover and four sequence edits, all followed by a <em>repair</em> that keeps the path legal</td></tr>
+              <tr><td>Selection: fitness → probability, returns a list sorted by fitness, repeats allowed</td><td><code>selection(population, n, method)</code> with the probabilities of <code>selectionProbabilities</code>; four methods</td></tr>
+              <tr><td>An initial population of random sequences</td><td><code>SolverAgent.randomIndividual</code>: random <em>legal</em> walks of random length</td></tr>
+            </tbody>
+          </table>
+
+          <h2>Legality first</h2>
+          <p>The brief says a sequence with an illegal action gets fitness 0. In this puzzle most actions are illegal in most states: a top-down gate only opens under a box that holds sand and is not already open, a side gate only between a full box and an empty one. A uniformly random sequence of 20 actions is therefore almost never legal, and splicing two legal sequences or changing one action in the middle breaks the rest of the sequence, because every later action was legal <em>in the state it used to be applied in</em>.</p>
+          <p>So the operators are built around legality. The initial population is made of random walks through the environment, which are legal by construction. After a crossover or a mutation the new sequence is replayed from the cut; the first action that is illegal in its new state is replaced by a random legal one, and so on to the end (<code>SolverAgent.build</code>). The same pass cuts a sequence at the first goal state, so <code>path_cost</code> only counts what was needed, and at <code>maxLength</code>. The Evaluation tab has the ablation: with repair switched off (random action ids, illegal actions left in place) the algorithm reaches the goal on 644 of the 59,049 states, 1.1%; 470 of those have an optimal plan of at most seven actions and 596 of at most nine, where a short random sequence can happen to be legal.</p>
+
+          <h2>The fitness function</h2>
+          <div class="proof">
+            <p><b>Default form.</b> <code>fitness = large_number − weight · conflict_numbers − path_cost</code>, and 0 if an action of the sequence is illegal. For a path that reaches the goal conflict_numbers is 0 and the fitness is exactly <code>large_number − path_cost</code>, which is what the brief asks for at the goal.</p>
+            <p><b>Why a partial path must be penalised at least by what it still costs.</b> Let a path end in state <em>s</em> with cost <em>g</em>. The best plan that continues it costs <em>g</em> + h*(<em>s</em>), so its fitness is <code>L − g − h*(s)</code>. The partial path itself scores <code>L − g − w·c(s)</code>. If <code>w·c(s) &lt; h*(s)</code> the unfinished path is <em>fitter than every way of finishing it</em>, and the fittest individual of all is the empty path. This is exactly what happens with the admissible h₂ of Assignment 2 used unweighted (<em>c</em> = h₂, <em>w</em> = 1): the fittest individual is a short unfinished path, goal paths survive only as by-products, and the plans it returns are no better than the greedy approach (optimal on 7.1% of states, mean ratio 1.173 against 1.066 for the default). The conflict estimate must be <em>pessimistic</em>, the opposite of what A* wants.</p>
+            <p><b>conflict_numbers.</b> The default counts the closed top-down gates that still have sand above them in their column, each of which has to be opened by one paid action. Multiplying the count by the largest possible action cost, 9, gives <code>9 · gates ≥ h*</code> on every one of the 326,041 reachable states of the 5×2 grid (the largest ratio h* / (3 · gates) is 2.73, below 3), so finishing a path always pays. The alternatives — the sand left in the grid, the fall distance h₃, the regression estimate h₄, the cost of the greedy approach from the state, and the unweighted h₂ — are compared in the Evaluation tab.</p>
+            <p><b>large_number.</b> Not chosen by hand: <code>L = 2 · maxLength · maxStepCost + 1</code> (361 for 20 actions of at most 9 each). A legal path costs at most <code>maxLength · maxStepCost</code>, the weighted conflict term is a remaining-cost estimate bounded the same way, so every legal path has a positive fitness and roulette selection is well defined. The constant is irrelevant to the ranking but not to roulette: see selection below.</p>
+            <p><b>Other forms.</b> The brief allows a change of form with a justification. <em>Strict</em> (<code>L − path_cost</code> at the goal, 0 otherwise) is the literal reading: it works here only because random legal walks reach the goal often, and it gives selection nothing to prefer among unfinished paths. <em>Ratio</em> (<code>L ÷ (1 + w·c + cost)</code>) keeps the ranking but compresses the differences; the expected loss for fitness-proportional selection did not show up in the measurements (27.4% optimal against 26.9%), most likely because the default wheel subtracts the worst fitness first, which undoes much of the compression. Subtraction is kept as the default because it leaves the fitness differences equal to the cost differences, the quantity the brief's formula names.</p>
+          </div>
+
+          <h2>Selection</h2>
+          <p>Fitness is turned into a probability and <em>n</em> parents are drawn with replacement; the list comes back sorted by fitness, as asked. The textbook wheel <code>pᵢ = fᵢ / Σf</code> has a flaw here that is a direct consequence of large_number: every fitness is roughly <code>L − 50</code>, so the best and the worst individual differ by a few percent and the wheel is almost uniform. Subtracting the worst fitness first (<code>pᵢ ∝ fᵢ − f_min + 1</code>) cancels the constant, leaves the cost differences, and is the default. Linear ranking and a tournament of three are included for comparison; two elites are copied unchanged into the next generation.</p>
+
+          <h2>Crossover and mutation</h2>
+          <p><b>Crossover</b> is one-point with independent cut points, because the parents differ in length: child 1 = head of A + tail of B, child 2 = head of B + tail of A, each repaired from the cut. The head is kept intact, so what the first parent achieved up to the cut is inherited exactly; the tail inherits the <em>intention</em> of the second parent (which gates it opens, in what order) and is repaired only where that no longer fits.</p>
+          <p><b>Mutation</b> applies one of four edits at a random position and repairs what follows: replace an action by another legal one, insert a legal action, delete an action, or cut the sequence and regrow it with a fresh random walk. The first three are the smallest possible changes to a sequence, the moves of edit distance; the fourth is the large jump that lets the population leave a local optimum.</p>
+
+          <h2>What the evaluation shows</h2>
+          <p>Every variant is run on all 59,049 initial states of the 5×2 grid, with the same seed per state, and compared with the optimum from value iteration: how often it reaches the goal, how often its plan is optimal, the distribution of <code>GA_opt_ratio</code> = GA cost ÷ optimum, the two scatter plots asked for in the first assignment, the number of fitness evaluations and the time. The <a href="#eval">Evaluation</a> tab draws it all.</p>
+
+          <h2>Documents</h2>
+          <ul>
+            <li><a href="../docs/a3-genetic-design.md">Design notes: the classes, the fitness, the operators, the parameters</a> (<a href="../docs/a3-genetic-design.fa.md">فارسی</a>)</li>
+            <li><a href="../docs/a3-results.md">Results of the evaluation, with figures</a> (<a href="../docs/a3-results.fa.md">فارسی</a>)</li>
+            <li><a href="../README.md">How to run, scripts, structure</a></li>
+          </ul>
+          <p class="note">The brief asks the students to write the report themselves once they understand the method. These pages and documents are the material for it: the design decisions with their reasons, and the measured results.</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <footer class="foot">
+    <span>Sand Boxes, Assignment 3 — course project, Artificial Intelligence.</span>
+    <span><a href="../assignment-2/">← Assignment 2: heuristic functions</a></span>
+  </footer>
+
+  <script type="module" src="../js/ui/app3.js"></script>
+</body>
+</html>

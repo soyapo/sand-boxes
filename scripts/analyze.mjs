@@ -4,6 +4,8 @@
 //   node scripts/analyze.mjs                      regenerate every dataset listed in PRESETS
 //   node scripts/analyze.mjs --rows 5             all 3^10 = 59,049 sand-only states of a 5x2 grid
 //   node scripts/analyze.mjs --only a2-5x2.json   the Assignment 2 heuristic comparison only
+//   node scripts/analyze.mjs --only a3-5x2.json   the Assignment 3 genetic-algorithm evaluation only
+//   node scripts/analyze.mjs --rows 5 --sample 300 --variants ga,ga-fall,astar-gap   a quick custom run
 //   node scripts/analyze.mjs --rows 5 --sample 2000 --seed 7
 //   node scripts/analyze.mjs --random --water --rows 5 --count 1000
 //
@@ -14,9 +16,10 @@ import { writeFileSync, mkdirSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import os from 'node:os';
-import { createRunner, createCollector, A2_VARIANTS } from '../js/core/analysis.js';
+import { createRunner, createCollector, A2_VARIANTS, A3_VARIANTS } from '../js/core/analysis.js';
 
 const A2_KEYS = A2_VARIANTS.map((v) => v.key);
+const A3_KEYS = A3_VARIANTS.map((v) => v.key);
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -28,6 +31,8 @@ const PRESETS = [
   { file: 'exhaustive-5x2.json', title: '5×2 grid — all 59,049 states', cfg: { kind: 'exhaustive', rows: 5 }, primary: true },
   // Assignment 2: heuristics compared on every initial state (written to data/a2-5x2.json, not listed in index.json)
   { file: 'a2-5x2.json', title: 'Assignment 2 — heuristics on all 59,049 states of 5×2', cfg: { kind: 'exhaustive', rows: 5, variants: A2_KEYS }, assignment2: true },
+  // Assignment 3: the genetic algorithm and its ablations on every initial state (data/a3-5x2.json)
+  { file: 'a3-5x2.json', title: 'Assignment 3 — genetic algorithm on all 59,049 states of 5×2', cfg: { kind: 'exhaustive', rows: 5, variants: A3_KEYS }, assignment2: true },
 ];
 
 function parseArgs(argv) {
@@ -108,6 +113,7 @@ if (args.rows || args.random) {
     seed: Number(args.seed) || 1,
   };
   if (args.sample) cfg.sample = Number(args.sample);
+  if (args.variants) cfg.variants = String(args.variants).split(',');
   if (args.random) { cfg.water = !!args.water; cfg.count = Number(args.count) || 500; }
   if (args.penalty) cfg.concretePenalty = Number(args.penalty);
   console.log(`Running ${JSON.stringify(cfg)} on ${workers} workers`);

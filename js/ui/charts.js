@@ -267,7 +267,8 @@ export function dotPlot(container, spec) {
 // ------------------------------------------------------------------ lines
 
 /**
- * @param {{series: {label:string, color:string, points:[number, number][]}[], xTitle:string, yTitle:string, log?:boolean, tipTitle?:(x:number)=>string}} spec
+ * @param {{series: {label:string, color:string, points:[number, number][]}[], xTitle:string, yTitle:string, linear?:boolean, yMin?:number, tipTitle?:(x:number)=>string}} spec
+ * The vertical axis is logarithmic unless `linear` is set.
  */
 export function lines(container, spec) {
   mount(container, (w) => {
@@ -282,15 +283,29 @@ export function lines(container, spec) {
     const all = series.flatMap((s) => s.points);
     const xMin = Math.min(...all.map((p) => p[0]));
     const xMax = Math.max(...all.map((p) => p[0]));
-    const pos = all.map((p) => p[1]).filter((v) => v > 0);
-    const lo = Math.floor(Math.log10(Math.min(...pos)));
-    const hi = Math.ceil(Math.log10(Math.max(...pos)) + 1e-9);
-    const span = Math.max(1, hi - lo);
     const x = (v) => m.l + ((v - xMin) / Math.max(1, xMax - xMin)) * pw;
-    const y = (v) => m.t + ph - ((Math.log10(Math.max(v, 10 ** lo)) - lo) / span) * ph;
-    for (let e = lo; e <= hi; e++) {
-      svg('line', { x1: m.l, x2: w - m.r, y1: y(10 ** e), y2: y(10 ** e), class: e === lo ? 'axisline' : 'gridline' }, root);
-      text(root, m.l - 6, y(10 ** e) + 4, fmt(10 ** e), { 'text-anchor': 'end' });
+    let y;
+    if (spec.linear) {
+      const ys = all.map((p) => p[1]);
+      const yMin = spec.yMin ?? Math.min(...ys);
+      const ticks = niceTicks(yMin, Math.max(...ys), 5);
+      const lo = ticks[0];
+      const hi = ticks[ticks.length - 1];
+      y = (v) => m.t + ph - ((v - lo) / Math.max(1e-9, hi - lo)) * ph;
+      for (const t of ticks) {
+        svg('line', { x1: m.l, x2: w - m.r, y1: y(t), y2: y(t), class: t === lo ? 'axisline' : 'gridline' }, root);
+        text(root, m.l - 6, y(t) + 4, fmt(t), { 'text-anchor': 'end' });
+      }
+    } else {
+      const pos = all.map((p) => p[1]).filter((v) => v > 0);
+      const lo = Math.floor(Math.log10(Math.min(...pos)));
+      const hi = Math.ceil(Math.log10(Math.max(...pos)) + 1e-9);
+      const span = Math.max(1, hi - lo);
+      y = (v) => m.t + ph - ((Math.log10(Math.max(v, 10 ** lo)) - lo) / span) * ph;
+      for (let e = lo; e <= hi; e++) {
+        svg('line', { x1: m.l, x2: w - m.r, y1: y(10 ** e), y2: y(10 ** e), class: e === lo ? 'axisline' : 'gridline' }, root);
+        text(root, m.l - 6, y(10 ** e) + 4, fmt(10 ** e), { 'text-anchor': 'end' });
+      }
     }
     for (const t of niceTicks(xMin, xMax, Math.min(10, Math.floor(pw / 50))).filter((t) => Number.isInteger(t) && t <= xMax)) text(root, x(t), m.t + ph + 16, t, { 'text-anchor': 'middle' });
 

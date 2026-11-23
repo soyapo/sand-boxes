@@ -2,7 +2,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { Sandbox, parseGrid, formatGrid, formatState, PROFESSOR_EXAMPLE, CONCRETE, SAND_HALF, WATER_HALF, EMPTY } from '../js/core/model.js';
+import { Sandbox, parseGrid, formatGrid, formatState, PROFESSOR_EXAMPLE, CONCRETE, SAND_HALF, WATER_HALF, EMPTY, seededRng } from '../js/core/model.js';
 import { search, ALGORITHMS } from '../js/core/search.js';
 import { makeProblem } from '../js/core/problem.js';
 import { HEURISTICS } from '../js/core/heuristics.js';
@@ -271,4 +271,113 @@ test('the learned heuristic is zero on goal states and h5 never falls below the 
     if (HEURISTICS['learned-safe'].fn(m, st) < HEURISTICS.gap.fn(m, st) - 1e-9) below++;
   }
   assert.equal(below, 0);
+});
+
+// ------------------------------------------------------------ Assignment 3
+
+test('genetic algorithm: fitness is 0 on an illegal action and large_number − cost at the goal', async () => {
+  const { Problem, Environment, SolverAgent, successfulPath, fitness } = await import('../js/core/genetic.js');
+  const m = new Sandbox({ rows: 4 });
+  const view = makeProblem(m, parseGrid(PROFESSOR_EXAMPLE), 'gap');
+  const problem = new Problem(view, { maxLength: 20 });
+  const env = new Environment(view);
+  assert.equal(problem.largeNumber, 2 * 20 * 9 + 1);
+  const plan = (text) => text.split(' ').map((tok) => (tok[0] === 'S' ? m.sideAction(Number(tok.slice(1)) - 1) : m.verticalAction(tok[0] === 'L' ? 0 : 1, Number(tok.slice(1)) - 1)));
+  const sideGatePlan = plan('S2 S3 L1 L2 L3 L4 R2 R3 R4'); // the assignment's 45 plan
+  assert.equal(successfulPath(problem, env, sideGatePlan), true);
+  assert.equal(fitness(problem, env, sideGatePlan), problem.largeNumber - 45);
+  assert.equal(fitness(problem, env, sideGatePlan, 'strict'), problem.largeNumber - 45);
+  assert.equal(successfulPath(problem, env, plan('S2 S3')), false);
+  // the partial path: 2 side gates (cost 2) leave 1 ½ ½ 1 on the left and 0 ½ ½ 0 on the right,
+  // so 4 + 3 = 7 closed gates with sand above them → 9 · 7
+  assert.equal(fitness(problem, env, plan('S2 S3')), problem.largeNumber - 9 * 7 - 2);
+  assert.equal(fitness(problem, env, plan('S2 S3'), 'strict'), 0);
+  // an illegal action (the left gate under row 2: that box is empty) → 0 in every form
+  for (const form of ['graded', 'strict', 'ratio']) assert.equal(fitness(problem, env, plan('L2 L1'), form), 0);
+  // the path is cut at the first goal state: what follows is neither applied nor paid for
+  assert.equal(fitness(problem, env, sideGatePlan.concat(sideGatePlan)), problem.largeNumber - 45);
+  const agent = new SolverAgent(problem, env, { seed: 3 });
+  const ind = agent.build(sideGatePlan.concat(sideGatePlan));
+  assert.equal(ind.genes.length, 9);
+  assert.equal(ind.goal, true);
+});
+
+test('genetic algorithm: 9 × closed gates with sand above is never below h* (every reachable state of 2x2 … 4x2)', async () => {
+  const { CONFLICTS } = await import('../js/core/genetic.js');
+  for (const rows of [2, 3, 4]) {
+    const m = new Sandbox({ rows });
+    const graph = buildGraph(m);
+    const { opt } = solveGraph(graph);
+    const view = { model: m, state: (s) => graph.stateOf(s), cells: (s) => graph.stateOf(s).cells };
+    for (let s = 0; s < graph.N; s++) {
+      if (graph.goal[s]) continue;
+      assert.ok(9 * CONFLICTS.gates.fn(view, s) >= opt[s], `${rows}x2 state ${s}: 9·gates ${9 * CONFLICTS.gates.fn(view, s)} < h* ${opt[s]}`);
+    }
+  }
+});
+
+test('genetic algorithm: selection probabilities sum to 1, the list is sorted, repeats are allowed', async () => {
+  const { selection, selectionProbabilities, SELECTION } = await import('../js/core/genetic.js');
+  const pop = [320, 300, 300, 290, 0, 350].map((f, i) => ({ fitness: f, genes: [i] }));
+  const rng = seededRng(5);
+  for (const method of Object.keys(SELECTION)) {
+    const p = selectionProbabilities(pop, method);
+    assert.ok(Math.abs(p.reduce((a, b) => a + b, 0) - 1) < 1e-9, method);
+    assert.ok(p[5] >= p[0] && p[0] >= p[1] && p[1] >= p[4], `${method}: a fitter individual is never less likely`);
+    const picked = selection(pop, 20, method, rng);
+    assert.equal(picked.length, 20);
+    for (let i = 1; i < picked.length; i++) assert.ok(picked[i - 1].fitness >= picked[i].fitness, `${method}: sorted`);
+  }
+  // the plain wheel barely tells 300 from 350 apart; the windowed one does (once the worst is 290, not 0)
+  const legal = pop.filter((x) => x.fitness > 0);
+  assert.ok(selectionProbabilities(legal, 'roulette')[4] / selectionProbabilities(legal, 'roulette')[1] < 1.2);
+  assert.ok(selectionProbabilities(legal, 'windowed')[4] / selectionProbabilities(legal, 'windowed')[1] > 4);
+  // all-zero fitness: uniform, no division by zero
+  const zeros = pop.map((x) => ({ ...x, fitness: 0 }));
+  assert.ok(selectionProbabilities(zeros, 'roulette').every((v) => Math.abs(v - 1 / 6) < 1e-9));
+});
+
+test('genetic algorithm: crossover and mutation keep individuals legal and within the length bound', async () => {
+  const { Problem, Environment, SolverAgent } = await import('../js/core/genetic.js');
+  const m = new Sandbox({ rows: 5 });
+  const view = makeProblem(m, parseGrid('1 1/1 1/1 1/0 0/0 0'), 'gap');
+  const problem = new Problem(view, { maxLength: 12 });
+  const env = new Environment(view);
+  const agent = new SolverAgent(problem, env, { seed: 11 });
+  const pop = Array.from({ length: 30 }, () => agent.randomIndividual());
+  for (const x of pop) { assert.ok(x.legal); assert.ok(x.genes.length <= 12); assert.ok(x.fitness > 0); }
+  for (let i = 0; i < 200; i++) {
+    const a = pop[i % 30];
+    const b = pop[(i * 7) % 30];
+    for (const child of agent.crossover(a, b)) {
+      assert.ok(child.legal && child.genes.length <= 12);
+      assert.equal(env.replay(problem, child.genes).legal, true);
+    }
+    const mutant = agent.mutate(a);
+    assert.ok(mutant.legal && mutant.genes.length <= 12);
+    assert.equal(env.replay(problem, mutant.genes).cost, mutant.cost);
+  }
+  // the fitness of an individual is what the standalone function says
+  for (const x of pop.slice(0, 5)) assert.equal(agent.fitness(x.genes), x.fitness);
+});
+
+test('genetic algorithm: solves the assignment example, is reproducible per seed, and reports like the other algorithms', () => {
+  const m = new Sandbox({ rows: 4 });
+  const p = makeProblem(m, parseGrid(PROFESSOR_EXAMPLE), 'gap');
+  const r1 = search('ga', p, { ga: { seed: 1 } });
+  const r2 = search('ga', p, { ga: { seed: 1 } });
+  assert.ok(r1.found);
+  assert.ok(r1.cost >= 38 && r1.cost <= 47, `cost ${r1.cost} between the optimum and the greedy approach`);
+  assert.deepEqual(r1.path.map((e) => e.a), r2.path.map((e) => e.a));
+  const { total, state } = replay(m, parseGrid(PROFESSOR_EXAMPLE), r1.path);
+  assert.equal(total, r1.cost);
+  assert.ok(m.isGoal(state));
+  assert.equal(r1.ga.history.length, r1.ga.generations + 1);
+  assert.ok(r1.expanded > 0 && r1.generated > r1.expanded);
+  // the admissible h₂ used unweighted rewards stopping short: the fittest individual is not a goal path
+  const bad = search('ga', p, { ga: { seed: 1, conflicts: 'h2' } });
+  assert.equal(bad.ga.best.goal, false);
+  // without repair nothing is legal for long
+  const naive = search('ga', p, { ga: { seed: 1, repair: false } });
+  assert.equal(naive.found, false);
 });

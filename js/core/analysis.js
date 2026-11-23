@@ -29,10 +29,32 @@ export const ALL_VARIANTS = Object.freeze([
   { key: 'astar-learned', algo: 'astar', h: 'learned', label: 'A* (h₄ regression)' },
   { key: 'astar-safe', algo: 'astar', h: 'learned-safe', label: 'A* (h₅ scaled)' },
   { key: 'rbfs-learned', algo: 'rbfs', h: 'learned', label: 'RBFS (h₄)', maxExpanded: RBFS_BUDGET },
+  // Assignment 3: the genetic algorithm and its ablations (same seed per instance in every variant)
+  { key: 'ga', algo: 'ga', h: 'gap', label: 'GA (default)', ga: {} },
+  { key: 'ga-roulette', algo: 'ga', h: 'gap', label: 'GA, plain roulette', ga: { selection: 'roulette' } },
+  { key: 'ga-rank', algo: 'ga', h: 'gap', label: 'GA, rank selection', ga: { selection: 'rank' } },
+  { key: 'ga-tournament', algo: 'ga', h: 'gap', label: 'GA, tournament', ga: { selection: 'tournament' } },
+  { key: 'ga-strict', algo: 'ga', h: 'gap', label: 'GA, strict fitness', ga: { fitness: 'strict' } },
+  { key: 'ga-ratio', algo: 'ga', h: 'gap', label: 'GA, ratio fitness', ga: { fitness: 'ratio' } },
+  { key: 'ga-sand', algo: 'ga', h: 'gap', label: 'GA, conflicts = sand', ga: { conflicts: 'sand' } },
+  { key: 'ga-fall', algo: 'ga', h: 'gap', label: 'GA, conflicts = h₃', ga: { conflicts: 'fall' } },
+  { key: 'ga-sweep', algo: 'ga', h: 'gap', label: 'GA, conflicts = greedy cost', ga: { conflicts: 'sweep' } },
+  { key: 'ga-h2', algo: 'ga', h: 'gap', label: 'GA, conflicts = h₂ unweighted', ga: { conflicts: 'h2' } },
+  { key: 'ga-learned', algo: 'ga', h: 'gap', label: 'GA, conflicts = h₄', ga: { conflicts: 'learned' } },
+  { key: 'ga-zero', algo: 'ga', h: 'gap', label: 'GA, no conflicts, strict', ga: { conflicts: 'zero', fitness: 'strict' } },
+  { key: 'ga-norepair', algo: 'ga', h: 'gap', label: 'GA, no repair', ga: { repair: false } },
+  { key: 'ga-nocross', algo: 'ga', h: 'gap', label: 'GA, no crossover', ga: { crossoverRate: 0 } },
+  { key: 'ga-nomut', algo: 'ga', h: 'gap', label: 'GA, no mutation', ga: { mutationRate: 0 } },
+  { key: 'ga-small', algo: 'ga', h: 'gap', label: 'GA, population 20', ga: { population: 20 } },
+  { key: 'ga-large', algo: 'ga', h: 'gap', label: 'GA, population 200', ga: { population: 200 } },
 ]);
 
 /** Assignment 1: the greedy approach, the four main searches and the informed ones. */
-export const VARIANTS = Object.freeze(ALL_VARIANTS.filter((v) => !['astar-learned', 'astar-safe', 'rbfs-learned'].includes(v.key)));
+export const VARIANTS = Object.freeze(ALL_VARIANTS.filter((v) => !['astar-learned', 'astar-safe', 'rbfs-learned'].includes(v.key) && v.algo !== 'ga'));
+
+/** Assignment 3: the genetic algorithm against the optimum, the greedy approach and A*, plus its ablations. */
+export const A3_VARIANTS = Object.freeze(['greedy', 'astar-gap', 'ga', 'ga-roulette', 'ga-rank', 'ga-tournament', 'ga-strict', 'ga-ratio', 'ga-sand', 'ga-fall', 'ga-sweep', 'ga-h2', 'ga-learned', 'ga-zero', 'ga-norepair', 'ga-nocross', 'ga-nomut', 'ga-small', 'ga-large']
+  .map((key) => ALL_VARIANTS.find((v) => v.key === key)));
 
 /** Assignment 2: how much each heuristic buys A* (and RBFS), plus the greedy approach for the ratio plots. */
 export const A2_VARIANTS = Object.freeze(['greedy', 'bfs', 'ucs', 'astar-volume', 'astar-gap', 'astar-learned', 'astar-safe', 'wastar', 'rbfs', 'rbfs-learned']
@@ -243,6 +265,12 @@ class Collector {
       p.frontier.push(r.maxFrontier);
       p.time.push(r.timeMs);
       if (r.aborted) p.aborted++;
+      let d = null;
+      if (solvable) {
+        d = p.depth.get(rec.steps);
+        if (!d) p.depth.set(rec.steps, (d = { n: 0, attempts: 0, optimal: 0, expanded: 0, memory: 0, time: 0 }));
+        d.attempts++;
+      }
       if (!r.found) return;
       p.solved++;
       p.costSum += r.cost;
@@ -253,8 +281,7 @@ class Collector {
         if (r.cost === rec.opt) p.optimal++;
         p.costVsOpt.add(r.cost, rec.opt, rec.key);
         if (rec.opt > 0) p.ratio.push(r.cost / rec.opt);
-        let d = p.depth.get(rec.steps);
-        if (!d) p.depth.set(rec.steps, (d = { n: 0, expanded: 0, memory: 0, time: 0 }));
+        if (r.cost === rec.opt) d.optimal++;
         d.n++; d.expanded += r.expanded; d.memory += r.maxMemory; d.time += r.timeMs;
       }
     });
@@ -293,7 +320,7 @@ class Collector {
         costVsOpt: p.costVsOpt.toJSON(),
         actions: p.actions.toJSON(),
         byDepth: [...p.depth.entries()].sort((a, b) => a[0] - b[0])
-          .map(([depth, d]) => ({ depth, n: d.n, expanded: d.expanded / d.n, memory: d.memory / d.n, timeMs: d.time / d.n })),
+          .map(([depth, d]) => ({ depth, n: d.n, attempts: d.attempts, optimal: d.optimal, expanded: d.n ? d.expanded / d.n : 0, memory: d.n ? d.memory / d.n : 0, timeMs: d.n ? d.time / d.n : 0 })),
       };
     });
     return {
@@ -369,7 +396,7 @@ export function createRunner(cfg = {}) {
       const succOf = (s) => graph.succ[s];
       const zero = () => 0;
       const cellsOf = (s) => graph.stateOf(s).cells;
-      const problems = variants.map((v) => ({ start: 0, actions: model.actions, isGoal, succ: succOf, cells: cellsOf, h: v.h ? ((arr) => (s) => arr[s])(hs[v.h]) : zero }));
+      const problems = variants.map((v) => ({ model, start: 0, actions: model.actions, isGoal, succ: succOf, cells: cellsOf, state: (s) => graph.stateOf(s), h: v.h ? ((arr) => (s) => arr[s])(hs[v.h]) : zero }));
       return { graph, solved, problems };
     };
     return {
@@ -380,7 +407,7 @@ export function createRunner(cfg = {}) {
         const runs = variants.map((v, k) => {
           const p = ctx.problems[k];
           p.start = i; // initial state i has graph index i
-          return slim(model, search(v.algo, p, { maxExpanded: Math.min(maxExpanded, v.maxExpanded ?? Infinity) }));
+          return slim(model, search(v.algo, p, { maxExpanded: Math.min(maxExpanded, v.maxExpanded ?? Infinity), ga: v.ga ? { ...v.ga, ...(cfg.ga || {}) } : undefined }));
         });
         return { key: ctx.graph.keys[i], opt: ctx.solved.opt[i], steps: ctx.solved.steps[i], sides: ctx.solved.sides[i], runs };
       },
@@ -401,7 +428,7 @@ export function createRunner(cfg = {}) {
       const cells = model.random(probs, seededRng(Math.imul(seed, 0x9e3779b1) + i));
       const base = makeProblem(model, model.initial(cells), 'gap');
       base.warm(maxExpanded);
-      const runs = variants.map((v) => slim(model, search(v.algo, base.using(v.h || 'zero'), { maxExpanded: Math.min(maxExpanded, v.maxExpanded ?? Infinity) })));
+      const runs = variants.map((v) => slim(model, search(v.algo, base.using(v.h || 'zero'), { maxExpanded: Math.min(maxExpanded, v.maxExpanded ?? Infinity), ga: v.ga ? { ...v.ga, ...(cfg.ga || {}) } : undefined })));
       // Reference optimum: any exact algorithm that finished (one of them may hit the expansion limit).
       const best = exactIndexes.map((k) => runs[k]).find((r) => r.found);
       return { key: base.start, opt: best ? best.cost : null, steps: best ? best.steps : 0, sides: best ? best.sides : 0, runs };

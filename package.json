@@ -9,7 +9,8 @@
     "test": "node --test tests/sandbox.test.mjs",
     "solve": "node scripts/solve.mjs",
     "analyze": "node scripts/analyze.mjs",
-    "learn": "node scripts/learn-heuristic.mjs"
+    "learn": "node scripts/learn-heuristic.mjs",
+    "evolve": "node scripts/evolve.mjs"
   },
   "engines": { "node": ">=18" }
 }

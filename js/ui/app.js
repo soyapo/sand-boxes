@@ -586,7 +586,8 @@ function onKey(e) {
 // --------------------------------------------------------------------- init
 
 function init() {
-  for (const [id, a] of Object.entries(ALGORITHMS)) $('algo').append(el('option', { value: id, textContent: `${a.name} — ${a.long}` }));
+  // the genetic algorithm belongs to Assignment 3 and has its own page
+  for (const [id, a] of Object.entries(ALGORITHMS)) if (id !== 'ga') $('algo').append(el('option', { value: id, textContent: `${a.name} — ${a.long}` }));
   for (const [id, h] of Object.entries(HEURISTICS)) $('heur').append(el('option', { value: id, textContent: `${h.short} · ${h.name}${h.admissible ? '' : ' (not admissible)'}` }));
   $('algo').value = 'astar';
   syncHeuristic(true);
@@ -662,7 +663,7 @@ function init() {
   // rules page tables
   $('algoTable').append(
     el('thead', {}, el('tr', {}, ['Algorithm', 'Order of expansion', 'Uses h', 'Cheapest solution guaranteed', 'Notes'].map((t) => el('th', { textContent: t })))),
-    el('tbody', {}, Object.values(ALGORITHMS).map((a) => el('tr', {}, [
+    el('tbody', {}, Object.entries(ALGORITHMS).filter(([id]) => id !== 'ga').map(([, a]) => el('tr', {}, [
       el('td', { textContent: `${a.name} — ${a.long}` }),
       el('td', { className: 'wrap', textContent: a.order }),
       el('td', { textContent: a.informed ? 'yes' : 'no' }),

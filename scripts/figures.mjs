@@ -165,6 +165,20 @@ function figuresA2(name, data) {
   save('actions-vs-sides', bubbles({ title: 'Actions to the goal against type-b actions, optimal plans (all 59,049 states, 5×2)', points: data.optimal.actions, xTitle: 'number of actions to the goal state', yTitle: 'number of actions of type b', integer: true }));
 }
 
+function figuresA3(name, data) {
+  const by = Object.fromEntries(data.algos.map((a) => [a.key, a]));
+  const g = by.ga;
+  const save = (file, svg) => writeFileSync(resolve(out, `${name}-${file}.svg`), svg);
+  const gas = data.algos.filter((a) => a.algo === 'ga' && a.solved > 0);
+  save('ratio', dots({ title: 'Mean cost ÷ optimum per variant of the genetic algorithm (all 59,049 states, 5×2)', rows: gas.map((a) => ({ label: a.label, value: a.ratio.mean })), xTitle: 'mean cost ÷ optimum (1 = optimal)', linear: true, min: 1 }));
+  save('optimal-share', dots({ title: 'Share of states where the plan is optimal, per variant (all 59,049 states, 5×2)', rows: gas.map((a) => ({ label: a.label, value: 100 * a.optimal / data.meta.solvable })), xTitle: 'percent of states with an optimal plan', linear: true, min: 0 }));
+  save('evaluations', dots({ title: 'Mean fitness evaluations per state, per variant', rows: data.algos.filter((a) => a.algo === 'ga').map((a) => ({ label: a.label, value: a.expanded.mean })), xTitle: 'fitness evaluations' }));
+  save('time', dots({ title: 'Mean time per state', rows: data.algos.map((a) => ({ label: a.label, value: a.timeMs.mean })), xTitle: 'milliseconds' }));
+  save('ratio-hist', columns({ title: 'GA_opt_ratio = GA cost ÷ optimum cost (default variant, all 59,049 states, 5×2)', bars: ratioBars(g), xTitle: 'ratio (label = upper edge of the bin; green bar = exactly 1)', yTitle: 'instances', every: Math.ceil(ratioBars(g).length / 14) }));
+  save('ga-vs-opt', bubbles({ title: 'Cost of the genetic algorithm against the optimum (all 59,049 states, 5×2)', points: g.costVsOpt, xTitle: 'cost of the GA plan', yTitle: 'optimum cost', diagonal: true }));
+  save('actions-vs-sides', bubbles({ title: 'Actions to the goal against type-b actions, GA plans (all 59,049 states, 5×2)', points: g.actions, xTitle: 'number of actions to the goal state', yTitle: 'number of actions of type b', integer: true }));
+}
+
 function tables(name, data) {
   const { meta, optimal, algos } = data;
   const g = algos.find((a) => a.key === 'greedy');
@@ -199,13 +213,14 @@ const FIGURES_FOR = ['exhaustive-5x2', 'water-5x2'];
 mkdirSync(out, { recursive: true });
 const tablesOnly = process.argv.includes('--tables');
 const listed = JSON.parse(readFileSync(resolve(root, 'data/index.json'), 'utf8')).map((d) => d.file);
-for (const file of [...listed, 'a2-5x2.json']) {
+for (const file of [...listed, 'a2-5x2.json', 'a3-5x2.json']) {
   const path = resolve(root, 'data', file);
   if (!existsSync(path)) { console.log(`(skipping ${file}: not generated yet)`); continue; }
   const data = JSON.parse(readFileSync(path, 'utf8'));
   const name = file.replace(/\.json$/, '');
   if (!tablesOnly && FIGURES_FOR.includes(name)) figures(name, data);
   if (!tablesOnly && name === 'a2-5x2') figuresA2(name, data);
+  if (!tablesOnly && name === 'a3-5x2') figuresA3(name, data);
   tables(name, data);
 }
 if (!tablesOnly) console.log(`\nFigures written to docs/figures/`);

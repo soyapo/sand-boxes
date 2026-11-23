@@ -1,6 +1,6 @@
 # Sand Boxes
 
-Two course projects on one puzzle — a two-column tower of sand boxes with spring-loaded gates — as a
+Three course projects on one puzzle — a two-column tower of sand boxes with spring-loaded gates — as a
 static site with no build step and no dependencies, hosted on GitHub Pages.
 
 **Live site:** <https://soyapo.github.io/sand-boxes/> (a selection page) · **Repository:** <https://github.com/soyapo/sand-boxes>
@@ -9,6 +9,7 @@ static site with no build step and no dependencies, hosted on GitHub Pages.
 |---|---|---|
 | **Assignment 1** | [soyapo.github.io/sand-boxes/assignment-1/](https://soyapo.github.io/sand-boxes/assignment-1/) | The environment, the greedy approach from class, the four uninformed searches and the informed ones, compared on every one of the 59,049 initial states. |
 | **Assignment 2** | [soyapo.github.io/sand-boxes/assignment-2/](https://soyapo.github.io/sand-boxes/assignment-2/) | Heuristic functions: one designed by relaxation with a proof of admissibility, one learned by linear regression, and their effect on A* and RBFS measured with the effective branching factor. |
+| **Assignment 3** | [soyapo.github.io/sand-boxes/assignment-3/](https://soyapo.github.io/sand-boxes/assignment-3/) | A genetic algorithm over action sequences: Problem / Environment / Solver agent, the fitness `large_number − conflict_numbers − path_cost`, legality-preserving crossover and mutation, fitness-proportional selection, evaluated against the optimum on all 59,049 initial states. |
 
 ![The simulator replaying the optimal plan for the assignment's example: two gates in the right column are open, and the cost of the current step is explained](docs/screenshots/simulator.jpg)
 
@@ -19,6 +20,8 @@ static site with no build step and no dependencies, hosted on GitHub Pages.
 ![Assignment 2: the heuristic explorer with two open gates, the values of h* and of every heuristic for the current state](docs/screenshots/a2-explorer.jpg)
 
 ![Assignment 2: effective branching factor per heuristic over all 59,049 states](docs/screenshots/a2-evaluation.jpg)
+
+![Assignment 3: a population of action sequences evolving on the example state, with the fitness per generation and the twelve fittest individuals](docs/screenshots/a3-evolve.jpg)
 
 ## What is in the box
 
@@ -40,6 +43,15 @@ static site with no build step and no dependencies, hosted on GitHub Pages.
 | **Learned** | The linear-regression model: coefficients, fit quality (R², errors, how often it overestimates), the safe version h₅ = max(h₂, h₄ − δ), the 4×2 → 5×2 transfer, and scatter plots of each heuristic against h*. |
 | **Evaluation** | On all 59,049 initial states: b* per heuristic and algorithm, plan quality, effort, the `Greedy_opt_ratio` histogram and the two scatter plots. |
 | **Design** | The relaxation, the proof of admissibility and consistency, and how b* is computed. |
+
+### Assignment 3 — genetic algorithm
+
+| | |
+|---|---|
+| **Evolve** | Pick or paint a state, set the parameters (population, generations, length bound, rates, selection method, fitness form, conflict function and weight, repair, seed) and watch the population evolve generation by generation: best / mean / worst fitness, the cost of the best solution against the optimum, the share of the population at the goal, and the twelve fittest sequences with their selection probability. The best plan is animated on the board. "Compare" runs the GA and its variants against A* and the greedy approach on the same state. |
+| **Operators** | The representation and the operators on a sample population of the current state: each individual's fitness worked out as `large_number − weight · conflict_numbers − path_cost`, its selection probability under all four formulas, a crossover with its cut points and repaired actions, and the four kinds of mutation. |
+| **Evaluation** | All 59,049 initial states: goal rate, optimality rate and mean cost ratio of every variant (selection methods, fitness forms, conflict functions, no repair / no crossover / no mutation, population sizes), the histogram of `GA_opt_ratio`, the two scatter plots, evaluations and time. |
+| **Design** | The brief mapped to the code, why the conflict term must be pessimistic, how `large_number` is derived, the operators and the selection formulas. |
 
 ## Team and how this was built
 
@@ -70,6 +82,8 @@ and the write-up, all of which we reviewed.
 | Execution report and evaluation of the search algorithms | [docs/03-report.md](docs/03-report.md) · [فارسی](docs/03-report.fa.md) |
 | **Assignment 2:** heuristic design by relaxation (with proof) and by linear regression | [docs/a2-heuristic-design.md](docs/a2-heuristic-design.md) · [فارسی](docs/a2-heuristic-design.fa.md) |
 | **Assignment 2:** execution report — b*, histogram, scatter plots, learned heuristic | [docs/a2-report.md](docs/a2-report.md) · [فارسی](docs/a2-report.fa.md) |
+| **Assignment 3:** design notes — the three classes, fitness, conflict_numbers, crossover, mutation, selection | [docs/a3-genetic-design.md](docs/a3-genetic-design.md) · [فارسی](docs/a3-genetic-design.fa.md) |
+| **Assignment 3:** results of the evaluation on all 59,049 states, with figures | [docs/a3-results.md](docs/a3-results.md) · [فارسی](docs/a3-results.fa.md) |
 | Full text of the chats with the AI model | [chats/](chats/) |
 
 Bonus items: graphical animation of the solution (Simulator tab), optimal solutions for all 59,049
@@ -108,8 +122,9 @@ node scripts/solve.mjs "1 0 / 0 1 / 0 1 / 1 0" --all
 node scripts/solve.mjs "1 0 / 0 1 / 0 1 / 1 0" --algo sweep
 ```
 
-Regenerate the datasets shown in the Analysis tab (uses worker threads; the 59,049-state run takes
-about an hour on four cores, dominated by IDA*, RBFS and UCS):
+Regenerate every dataset (uses worker threads and keeps all cores busy for a long time: about an
+hour for the Assignment 1 run on four cores, dominated by IDA*, RBFS and UCS, then another half hour
+for Assignment 2 and three quarters of an hour for Assignment 3; use `--only` to pick one):
 
 ```bash
 npm run analyze
@@ -125,6 +140,18 @@ Regenerate the Assignment 2 evaluation only (about half an hour):
 
 ```bash
 node scripts/analyze.mjs --only a2-5x2.json
+```
+
+Run the genetic algorithm of Assignment 3 on one grid, with a log of every generation (`--compare` runs it and its variants against A* and the greedy approach; parameters such as `--population 200 --selection rank --conflicts fall` are listed at the top of the script):
+
+```bash
+npm run evolve -- "1 0 / 0 1 / 0 1 / 1 0"
+```
+
+Regenerate the Assignment 3 evaluation (every variant on all 59,049 states, about 45 minutes with seven worker threads, all cores busy):
+
+```bash
+node scripts/analyze.mjs --only a3-5x2.json
 ```
 
 A single custom run, for instance a sample with another door rule:
@@ -146,19 +173,22 @@ file tells GitHub Pages to serve the files untouched.
 ## Project layout
 
 ```
-index.html              selection page: Assignment 1 or Assignment 2
+index.html              selection page: Assignment 1, 2 or 3
 assignment-1/index.html Assignment 1 (three tabs: Simulator, Analysis, Rules)
 assignment-2/index.html Assignment 2 (Heuristics, Learned, Evaluation, Design)
-css/style.css           styles, light and dark theme, the two accents
+assignment-3/index.html Assignment 3 (Evolve, Operators, Evaluation, Design)
+css/style.css           styles, light and dark theme, the three accents
 js/core/model.js        state, physics, actions, cost function (sand, water, concrete)
 js/core/search.js       greedy approach, BFS, DFS, IDS, UCS, A*, RBFS, IDA*, Weighted A*, greedy best-first
 js/core/heuristics.js   h₀ zero, h₁ columns, h₂ closed gates, h₃ fall distance, h₄ regression, h₅ regression made safe
 js/core/features.js     the 13 state features of the learned heuristic
 js/core/learned.js      coefficients of the learned heuristic (written by scripts/learn-heuristic.mjs)
+js/core/genetic.js      Assignment 3: Problem, Environment, SolverAgent, fitness, conflict functions, selection, crossover, mutation
 js/core/problem.js      glue between model and search (memoised successors)
 js/core/analysis.js     batch evaluation: transition table, optimal costs, statistics
 js/ui/app.js            Assignment 1: simulator and solver panel
 js/ui/app2.js           Assignment 2: heuristic explorer, learned model, evaluation
+js/ui/app3.js           Assignment 3: live evolution, operators, evaluation
 js/ui/board.js          canvas rendering and animation
 js/ui/charts.js         SVG charts (histogram, bubble scatter, dot plot, lines)
 js/ui/analysis-ui.js    Analysis tab, live runs in web workers
@@ -167,8 +197,9 @@ scripts/serve.mjs       local static server              (npm start)
 scripts/solve.mjs       command-line solver              (npm run solve -- "...")
 scripts/analyze.mjs     batch evaluation, writes data/   (npm run analyze)
 scripts/learn-heuristic.mjs  linear regression of h* on the state features (npm run learn)
+scripts/evolve.mjs      genetic algorithm on one grid with a generation log (npm run evolve -- "...")
 scripts/figures.mjs     report figures (docs/figures) and tables from data/
-data/*.json             precomputed results (Assignment 1 datasets, a2-5x2.json, a2-regression.json)
+data/*.json             precomputed results (Assignment 1 datasets, a2-5x2.json, a2-regression.json, a3-5x2.json)
 tests/sandbox.test.mjs  tests                            (npm test)
 docs/                   problem statements and report (English and Persian)
 chats/                  transcripts of the AI chats

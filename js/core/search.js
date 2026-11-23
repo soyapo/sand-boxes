@@ -11,6 +11,8 @@
 //   { found, aborted, cost, path: [{a, s, c}], expanded, generated, maxFrontier, maxMemory, iterations, timeMs }
 // where maxMemory is the peak number of states held at once (frontier + explored / tables).
 
+import { geneticSearch } from './genetic.js';
+
 const now = () => (typeof performance !== 'undefined' ? performance.now() : Date.now());
 
 class MinHeap {
@@ -362,6 +364,7 @@ export const ALGORITHMS = Object.freeze({
   rbfs: { name: 'RBFS', long: 'Recursive best-first search', informed: true, optimal: true, order: 'best f first, backing up f-values', run: (p, o) => rbfs(p, o), note: 'Cheapest solution in linear memory; re-expands states heavily.' },
   idastar: { name: 'IDA*', long: 'Iterative deepening A*', informed: true, optimal: true, order: 'DFS inside growing g + h contours', run: (p, o) => idastar(p, o), note: 'Cheapest solution by depth-first f-contours.' },
   wastar: { name: 'Weighted A*', long: 'Weighted A* (w = 2)', informed: true, optimal: false, order: 'lowest g + 2h', run: (p, o) => bestFirst(p, o, 'astar', o.weight ?? 2), note: 'Faster than A*, cost at most w × optimal.' },
+  ga: { name: 'Genetic algorithm', long: 'Genetic algorithm over action sequences', informed: true, optimal: false, order: 'a population of paths: selection, crossover, mutation', run: (p, o) => geneticSearch(p, o), note: 'Local search over whole plans (Assignment 3): the heuristic is the conflict count of the fitness function. No guarantee of a solution or of optimality.' },
   gbfs: { name: 'Greedy best-first', long: 'Greedy best-first search', informed: true, optimal: false, order: 'lowest h', run: (p, o) => bestFirst(p, o, 'greedy'), note: 'The informed-search “greedy”: always expands the state that looks closest to the goal.' },
 });
 
@@ -369,7 +372,7 @@ export const ALGORITHMS = Object.freeze({
  * Run one algorithm.
  * @param {keyof ALGORITHMS} id
  * @param {object} problem
- * @param {{maxExpanded?: number, weight?: number}} [opts]
+ * @param {{maxExpanded?: number, weight?: number, ga?: object, onGeneration?: Function}} [opts]
  */
 export function search(id, problem, opts = {}) {
   const algo = ALGORITHMS[id];
