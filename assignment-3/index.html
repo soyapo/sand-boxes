@@ -72,7 +72,7 @@
           <div class="params" id="params">
             <label>Population <input id="pPopulation" type="number" min="4" max="1000" step="1" value="60"></label>
             <label>Generations <input id="pGenerations" type="number" min="1" max="5000" step="1" value="150"></label>
-            <label>Max length <input id="pMaxLength" type="number" min="1" max="60" step="1" value="20"></label>
+            <label>Max length <span class="hint">blank = 4 per row</span> <input id="pMaxLength" type="number" min="1" max="60" step="1" value="" placeholder="4 × rows"></label>
             <label>Elite kept <input id="pElite" type="number" min="0" max="50" step="1" value="2"></label>
             <label>Crossover rate <input id="pCrossover" type="number" min="0" max="1" step="0.05" value="0.9"></label>
             <label>Mutation rate <input id="pMutation" type="number" min="0" max="1" step="0.05" value="0.3"></label>
@@ -80,23 +80,42 @@
             <label>Seed <input id="pSeed" type="number" min="0" max="999999" step="1" value="1"></label>
           </div>
           <div class="field">
-            <label class="label" for="pSelection">Selection</label>
+            <label class="label" for="pSelection">Step 7 · Selection</label>
             <select id="pSelection"></select>
             <p class="hint" id="selectionHint"></p>
           </div>
           <div class="field">
-            <label class="label" for="pFitness">Fitness</label>
+            <label class="label" for="pFitness">Step 5 · Fitness</label>
             <select id="pFitness"></select>
             <p class="hint" id="fitnessHint"></p>
           </div>
+          <div class="params">
+            <label>w₁ (conflicts) <input id="pWeight" type="number" min="0" max="100" step="0.1" value="9"></label>
+            <label>w₂ (cost) <input id="pCostWeight" type="number" min="0" max="100" step="0.1" value="1"></label>
+            <label>f <select id="pConflictTransform"></select></label>
+            <label>g <select id="pCostTransform"></select></label>
+          </div>
           <div class="field">
-            <label class="label" for="pConflicts">conflict_numbers</label>
+            <label class="label" for="pConflicts">Step 4 · Conflict Number</label>
             <select id="pConflicts"></select>
             <p class="hint" id="conflictsHint"></p>
           </div>
-          <div class="field row">
-            <label>Weight <input id="pWeight" type="number" min="0" max="100" step="0.1" value="9" style="width:80px"></label>
-            <label class="check"><input id="pRepair" type="checkbox" checked> Repair illegal actions</label>
+          <div class="field">
+            <label class="label" for="pConflictMode">… read along the sequence as</label>
+            <select id="pConflictMode"></select>
+          </div>
+          <div class="field">
+            <label class="label" for="pCrossoverType">Step 6 · Crossover</label>
+            <select id="pCrossoverType"></select>
+          </div>
+          <div class="field">
+            <span class="label">Step 6 · Mutations</span>
+            <div class="checks" id="pMutations"></div>
+          </div>
+          <div class="field">
+            <label class="label" for="pIllegal">Illegal actions</label>
+            <select id="pIllegal"></select>
+            <p class="hint" id="illegalHint"></p>
           </div>
         </aside>
 
@@ -138,7 +157,7 @@
 
         <aside class="card solver">
           <h2>Run the genetic algorithm</h2>
-          <p class="sub">Every individual is a sequence of gate actions from the start state. fitness = <code>large_number − weight · conflict_numbers − path_cost</code>; see the <a href="#design">Design</a> tab.</p>
+          <p class="sub">Every individual is a sequence of gate actions from the start state. fitness = <code>large_number − w₁·f(conflict_number) − w₂·g(path_cost)</code>, with the conflict number the smallest seen along the sequence; see the <a href="#design">Design</a> tab.</p>
           <div class="btn-row">
             <button id="btnEvolve" class="btn primary">Evolve</button>
             <button id="btnCompare" class="btn">Compare with A* and greedy</button>
@@ -193,52 +212,47 @@
       <div class="prose-grid">
         <article class="card prose">
           <h2>What this project adds</h2>
-          <p>Assignments 1 and 2 searched the <em>state space</em>: a frontier of states, expanded one at a time. This project searches the space of <em>plans</em> with a genetic algorithm: a population of whole action sequences that is improved by selection, crossover and mutation. The environment, the cost function and the heuristics are shared with the other two projects (rules in Assignment 1’s <a href="../assignment-1/#rules">Rules</a> tab).</p>
-          <p>The brief asks for the following pieces; each maps to a named class or function in <code>js/core/genetic.js</code>.</p>
-          <table class="data compact">
-            <thead><tr><th>Asked for</th><th>Here</th></tr></thead>
-            <tbody>
-              <tr><td>Three classes: Problem, Environment, Solver agent</td><td><code>Problem</code> (start, goal test, actions, length bound, conflict_numbers, large_number), <code>Environment</code> (applies actions, reports cost and legality, replays a path), <code>SolverAgent</code> (the genetic algorithm)</td></tr>
-              <tr><td>A state is the sequence of actions from the start, with a fixed maximum length</td><td>An individual is an array of action ids; <code>maxLength</code> bounds it (20 by default: longer than any optimal plan of the 5×2 grid, which needs at most 18)</td></tr>
-              <tr><td><code>successful_path</code> → true / false</td><td><code>successfulPath(problem, env, genes)</code>: replay and test the goal</td></tr>
-              <tr><td><code>fitness</code> with large_number, conflict_numbers, path_cost; 0 for an illegal action</td><td><code>fitness(...)</code>; three forms below, all with those three variables</td></tr>
-              <tr><td>conflict_numbers: a heuristic estimate of the distance to the goal</td><td><code>Problem.conflictNumbers(s)</code>: seven choices, the default counts the closed gates that still have sand above them</td></tr>
-              <tr><td>Mutation and crossover</td><td><code>SolverAgent.mutate</code>, <code>SolverAgent.crossover</code>: one-point crossover and four sequence edits, all followed by a <em>repair</em> that keeps the path legal</td></tr>
-              <tr><td>Selection: fitness → probability, returns a list sorted by fitness, repeats allowed</td><td><code>selection(population, n, method)</code> with the probabilities of <code>selectionProbabilities</code>; four methods</td></tr>
-              <tr><td>An initial population of random sequences</td><td><code>SolverAgent.randomIndividual</code>: random <em>legal</em> walks of random length</td></tr>
-            </tbody>
-          </table>
+          <p>Assignments 1 and 2 searched the <em>state space</em>: a frontier of states, expanded one at a time. This project searches the space of <em>plans</em> with a genetic algorithm: a population of whole action sequences that is improved by selection, crossover and mutation. The environment, the cost function and the heuristics are shared with the other two projects (rules in Assignment 1’s <a href="../assignment-1/#rules">Rules</a> tab). The project brief describes the algorithm in seven steps; this page answers them in order, and the full reasoning is in the <a href="../docs/a3-genetic-design.md">design notes</a>.</p>
 
-          <h2>Legality first</h2>
-          <p>The brief says a sequence with an illegal action gets fitness 0. In this puzzle most actions are illegal in most states: a top-down gate only opens under a box that holds sand and is not already open, a side gate only between a full box and an empty one. A uniformly random sequence of 20 actions is therefore almost never legal, and splicing two legal sequences or changing one action in the middle breaks the rest of the sequence, because every later action was legal <em>in the state it used to be applied in</em>.</p>
-          <p>So the operators are built around legality. The initial population is made of random walks through the environment, which are legal by construction. After a crossover or a mutation the new sequence is replayed from the cut; the first action that is illegal in its new state is replaced by a random legal one, and so on to the end (<code>SolverAgent.build</code>). The same pass cuts a sequence at the first goal state, so <code>path_cost</code> only counts what was needed, and at <code>maxLength</code>. The Evaluation tab has the ablation: with repair switched off (random action ids, illegal actions left in place) the algorithm reaches the goal on 644 of the 59,049 states, 1.1%; 470 of those have an optimal plan of at most seven actions and 596 of at most nine, where a short random sequence can happen to be legal.</p>
+          <h2>Step 1 · The problem</h2>
+          <p>The Sandbox of Assignment 1: a tower of <em>n</em>×2 boxes with sand, spring-loaded top-down gates and side gates, action costs <code>1 + 4·(s + s′)</code> and 1, goal “no sand left”. The task is to find a <em>successful path</em>, a sequence of actions from the initial state to a goal state, and among successful paths a cheap one. The classes are <code>Problem</code> (start state, goal test, actions, length bound, conflict function, large_number), <code>Environment</code> (applies actions, reports cost and legality, replays a sequence) and <code>SolverAgent</code> (the algorithm), all in <code>js/core/genetic.js</code>.</p>
 
-          <h2>The fitness function</h2>
+          <h2>Step 2 · A state is a sequence of actions</h2>
+          <p>An individual is an array of action ids read from the start state (<code>S2 L1 R4 …</code>). Its length is bounded by <code>maxLength</code>, 4 actions per row by default (20 for the 5×2 grid; no optimal 5×2 plan needs more than 18). As the brief says, if the goal is reached before the last action the rest of the sequence is ignored: the replay stops there and the later actions are neither applied nor paid for.</p>
+
+          <h2>Step 3 · Path_Goal_Test</h2>
+          <p><code>successfulPath(problem, env, sequence)</code>, also exported as <code>pathGoalTest</code> and <code>successfulPathTest</code>: replay the sequence from the initial state and return true if a goal state is reached at any point, false otherwise.</p>
+
+          <h2>Step 4 · Conflict Number</h2>
+          <p>A function that scores a state by how far it seems from the goal, 0 at the goal. The sequence is replayed from the initial state, every state after an action is scored, and <em>the smallest score seen along the sequence</em> is the conflict number of the sequence, exactly as the brief asks (the end-state value is kept as an option for comparison). The default count is the number of <b>closed top-down gates that still have sand above them</b> in their column, each of which must be opened by one paid action. The brief’s own example, the number of boxes that still hold sand, and six further choices (half-units of sand, the fall distance h₃, the regression estimate h₄, the cost of the greedy approach from the state, the admissible h₂, none) are available and compared.</p>
+          <p class="note">Why not the best A* heuristic? Because the fitness below subtracts the conflict number, and a conflict number that <em>under</em>estimates the remaining cost makes an unfinished path look better than its own completion (step 5). The count of gates is multiplied by the largest action cost, 9, and <code>9 · gates ≥ h*</code> on every one of the 326,041 reachable 5×2 states, so finishing always pays.</p>
+
+          <h2>Step 5 · Fitness</h2>
           <div class="proof">
-            <p><b>Default form.</b> <code>fitness = large_number − weight · conflict_numbers − path_cost</code>, and 0 if an action of the sequence is illegal. For a path that reaches the goal conflict_numbers is 0 and the fitness is exactly <code>large_number − path_cost</code>, which is what the brief asks for at the goal.</p>
-            <p><b>Why a partial path must be penalised at least by what it still costs.</b> Let a path end in state <em>s</em> with cost <em>g</em>. The best plan that continues it costs <em>g</em> + h*(<em>s</em>), so its fitness is <code>L − g − h*(s)</code>. The partial path itself scores <code>L − g − w·c(s)</code>. If <code>w·c(s) &lt; h*(s)</code> the unfinished path is <em>fitter than every way of finishing it</em>, and the fittest individual of all is the empty path. This is exactly what happens with the admissible h₂ of Assignment 2 used unweighted (<em>c</em> = h₂, <em>w</em> = 1): the fittest individual is a short unfinished path, goal paths survive only as by-products, and the plans it returns are no better than the greedy approach (optimal on 7.1% of states, mean ratio 1.173 against 1.066 for the default). The conflict estimate must be <em>pessimistic</em>, the opposite of what A* wants.</p>
-            <p><b>conflict_numbers.</b> The default counts the closed top-down gates that still have sand above them in their column, each of which has to be opened by one paid action. Multiplying the count by the largest possible action cost, 9, gives <code>9 · gates ≥ h*</code> on every one of the 326,041 reachable states of the 5×2 grid (the largest ratio h* / (3 · gates) is 2.73, below 3), so finishing a path always pays. The alternatives — the sand left in the grid, the fall distance h₃, the regression estimate h₄, the cost of the greedy approach from the state, and the unweighted h₂ — are compared in the Evaluation tab.</p>
-            <p><b>large_number.</b> Not chosen by hand: <code>L = 2 · maxLength · maxStepCost + 1</code> (361 for 20 actions of at most 9 each). A legal path costs at most <code>maxLength · maxStepCost</code>, the weighted conflict term is a remaining-cost estimate bounded the same way, so every legal path has a positive fitness and roulette selection is well defined. The constant is irrelevant to the ranking but not to roulette: see selection below.</p>
-            <p><b>Other forms.</b> The brief allows a change of form with a justification. <em>Strict</em> (<code>L − path_cost</code> at the goal, 0 otherwise) is the literal reading: it works here only because random legal walks reach the goal often, and it gives selection nothing to prefer among unfinished paths. <em>Ratio</em> (<code>L ÷ (1 + w·c + cost)</code>) keeps the ranking but compresses the differences; the expected loss for fitness-proportional selection did not show up in the measurements (27.4% optimal against 26.9%), most likely because the default wheel subtracts the worst fitness first, which undoes much of the compression. Subtraction is kept as the default because it leaves the fitness differences equal to the cost differences, the quantity the brief's formula names.</p>
+            <p><b>Form.</b> The brief’s general form <code>fitness = large_number − w₁·f(conflict_number) − w₂·g(path_cost)</code>, with f and g increasing (identity, √x or ln(1 + x)) and w₁, w₂ positive. Defaults: f = g = identity, w₂ = 1, w₁ = 9 for the gate count. A sequence with an illegal action scores 0. For a successful path the conflict number is 0 and the fitness is <code>large_number − w₂·g(path_cost)</code>: successful paths beat unsuccessful ones, and cheaper successful paths beat dearer ones, which are the brief’s two criteria. For an unfinished path the fitness is not zero, as the brief requires: it falls with the conflict number.</p>
+            <p><b>Why the conflict term must be pessimistic.</b> Let a path end in state <em>s</em> with cost <em>g</em>. Its best completion costs <em>g</em> + h*(<em>s</em>) and scores <code>L − g − h*(s)</code>; the unfinished path scores <code>L − g − w₁·c(s)</code>. If <code>w₁·c(s) &lt; h*(s)</code> the unfinished path is fitter than every way of finishing it, and the fittest individual of all is the empty path. With the admissible h₂ of Assignment 2 used unweighted this is what happens: the fittest individual is a short unfinished path, goal paths survive only as by-products of the random walks, and the plans returned are no better than the greedy approach’s. The smallest-along-the-sequence rule weakens the penalty further (it is at most the end-state value), but the same argument applies to the prefix where the minimum occurs: that prefix, completed optimally, still dominates the whole path.</p>
+            <p><b>large_number.</b> Not chosen by hand: <code>L = 2 · maxLength · maxStepCost + 1</code> (361 for 20 actions of at most 9). A legal path costs at most <code>maxLength · maxStepCost</code>, the weighted conflict term is a remaining-cost estimate bounded the same way, so every legal path has a positive fitness, which roulette selection needs. The brief treats L as a hyperparameter; it is irrelevant to the ranking but not to roulette (step 7).</p>
+            <p><b>Other forms.</b> <em>Strict</em> (0 unless the goal is reached) is the literal reading of the earlier brief; it is no longer required and gives selection nothing to prefer among unfinished paths. <em>Ratio</em> (<code>L ÷ (1 + w₁·f(c) + w₂·g(cost))</code>) keeps the ranking with compressed differences. Both are measured in the Evaluation tab.</p>
           </div>
 
-          <h2>Selection</h2>
-          <p>Fitness is turned into a probability and <em>n</em> parents are drawn with replacement; the list comes back sorted by fitness, as asked. The textbook wheel <code>pᵢ = fᵢ / Σf</code> has a flaw here that is a direct consequence of large_number: every fitness is roughly <code>L − 50</code>, so the best and the worst individual differ by a few percent and the wheel is almost uniform. Subtracting the worst fitness first (<code>pᵢ ∝ fᵢ − f_min + 1</code>) cancels the constant, leaves the cost differences, and is the default. Linear ranking and a tournament of three are included for comparison; two elites are copied unchanged into the next generation.</p>
+          <h2>Step 6 · The genetic algorithm</h2>
+          <p><b>6.1 Initial population.</b> <code>population</code> individuals (60 by default), each a random sequence of <code>maxLength</code> actions from the initial state. In this puzzle most actions are illegal in most states (a top-down gate only opens under a box that holds sand and is not already open; a side gate only between a full box and an empty one), so a uniformly random sequence is almost never legal. The initial sequences are therefore <em>random legal walks</em>: at every step a legal action is drawn uniformly. This is what rejection sampling of random sequences would converge to, at a fraction of the cost.</p>
+          <p><b>6.2a Mutation.</b> One random edit, then the part after it is replayed. The three mutations of the brief: <em>replace</em> one action by another, <em>swap</em> two positions, <em>reverse</em> the segment between two positions. Three additions that change the length: <em>insert</em>, <em>delete</em>, <em>cut and regrow</em> with a fresh random walk (the large jump out of a local optimum). All six are enabled by default and can be switched off one by one; the evaluation compares the brief’s three alone.</p>
+          <p><b>Illegal children.</b> The brief’s rule is the <em>lethal mutation</em>: a child with an illegal action is discarded and the operator is drawn again. Three behaviours are implemented and compared. <em>Repair</em> (default): the first action that is illegal in the state it now meets is replaced by a random legal one and the replay continues, so every individual stays legal. <em>Retry</em> (lethal, as in the brief): redraw the operator up to 20 times, then keep the parent so the population size stays constant. <em>Keep with fitness 0</em>: the baseline that shows why this matters.</p>
+          <p><b>6.2b Crossover.</b> <em>Single-point</em> (default): child 1 = prefix of A + suffix of B, child 2 = prefix of B + suffix of A, with independent cut points because the parents differ in length; the prefix is kept intact, so what the first parent achieved up to the cut is inherited exactly, and the suffix inherits the second parent’s <em>intention</em> (which gates, in which order), repaired only where it no longer fits. <em>Double-point</em>: the segments between two cut points are exchanged. The population size stays constant: two parents give two children.</p>
 
-          <h2>Crossover and mutation</h2>
-          <p><b>Crossover</b> is one-point with independent cut points, because the parents differ in length: child 1 = head of A + tail of B, child 2 = head of B + tail of A, each repaired from the cut. The head is kept intact, so what the first parent achieved up to the cut is inherited exactly; the tail inherits the <em>intention</em> of the second parent (which gates it opens, in what order) and is repaired only where that no longer fits.</p>
-          <p><b>Mutation</b> applies one of four edits at a random position and repairs what follows: replace an action by another legal one, insert a legal action, delete an action, or cut the sequence and regrow it with a fresh random walk. The first three are the smallest possible changes to a sequence, the moves of edit distance; the fourth is the large jump that lets the population leave a local optimum.</p>
+          <h2>Step 7 · Selection</h2>
+          <p><code>selection(population, n, method)</code> turns fitness into a probability and draws <em>n</em> individuals with replacement: the mating pool, a list of sequences with repeats, returned sorted by fitness. Methods: the textbook roulette <code>pᵢ = fᵢ / Σf</code>; the same wheel after subtracting the worst fitness (default), because with large_number inside every fitness the plain wheel is almost uniform; linear ranking; and a tournament of three. The pool is shuffled and mated in pairs (i, i+1) with crossover probability 0.9; each child is mutated with probability 0.3; the two fittest individuals are copied unchanged (elitism, our addition, can be set to 0). The run stops after 150 generations or 50 without improvement.</p>
 
           <h2>What the evaluation shows</h2>
-          <p>Every variant is run on all 59,049 initial states of the 5×2 grid, with the same seed per state, and compared with the optimum from value iteration: how often it reaches the goal, how often its plan is optimal, the distribution of <code>GA_opt_ratio</code> = GA cost ÷ optimum, the two scatter plots asked for in the first assignment, the number of fitness evaluations and the time. The <a href="#eval">Evaluation</a> tab draws it all.</p>
+          <p>As the brief asks: 100 random problems with different initial states, the GA against A* and UCS — how many it solves, how many of those solutions are optimal, and the mean of <code>GA_Path_cost ÷ optimum_path_cost</code> over all 100 and over the successes — for the default configuration and for every alternative above, on the 5×2 and the 6×2 grid. A larger run over all 59,049 initial states of the 5×2 grid, made with the first version of the algorithm, is kept below it. See the <a href="#eval">Evaluation</a> tab.</p>
 
           <h2>Documents</h2>
           <ul>
-            <li><a href="../docs/a3-genetic-design.md">Design notes: the classes, the fitness, the operators, the parameters</a> (<a href="../docs/a3-genetic-design.fa.md">فارسی</a>)</li>
-            <li><a href="../docs/a3-results.md">Results of the evaluation, with figures</a> (<a href="../docs/a3-results.fa.md">فارسی</a>)</li>
-            <li><a href="../README.md">How to run, scripts, structure</a></li>
+            <li><a href="../docs/a3-genetic-design.md">Design notes: the seven steps, each choice and its reason</a> (<a href="../docs/a3-genetic-design.fa.md">فارسی</a>)</li>
+            <li><a href="../docs/a3-results.md">Execution and evaluation report: 100 random problems, then all 59,049 states</a> (<a href="../docs/a3-results.fa.md">فارسی</a>)</li>
+            <li><a href="../README.md">How to run, scripts, structure, the deliverables</a></li>
           </ul>
-          <p class="note">The brief asks the students to write the report themselves once they understand the method. These pages and documents are the material for it: the design decisions with their reasons, and the measured results.</p>
         </article>
       </div>
     </section>

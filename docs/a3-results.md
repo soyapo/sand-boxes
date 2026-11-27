@@ -1,35 +1,178 @@
-# Assignment 3 — results of the genetic algorithm on all 59,049 initial states
+# Assignment 3 — execution and evaluation report: the genetic algorithm against A* and UCS
 
-The genetic algorithm described in [a3-genetic-design.md](a3-genetic-design.md) and its
-variants, run once on each of the 59,049 initial states of the 5×2 grid and compared with the
-optimum. The same page of figures is interactive on the
-[Evaluation tab](https://soyapo.github.io/sand-boxes/assignment-3/#eval); the raw numbers are in
-`data/a3-5x2.json`, produced by `node scripts/analyze.mjs --only a3-5x2.json`.
+Deliverable 6 of the brief asks for the performance of the genetic algorithm against at least
+one state-space search: the number of successes on 100 random problems with different initial
+states, the share of those successes whose path cost is optimal (equal to A\* / UCS), and the
+mean of `GA_Path_cost / optimum_path_cost`, once over all 100 problems and once over the
+successes only. Section 1 gives exactly that, for the default configuration and for every
+alternative described in [a3-genetic-design.md](a3-genetic-design.md), on the 5×2 and the 6×2
+grid. Section 2 adds a larger run over all 59,049 initial states of the 5×2 grid made with the
+first version of the algorithm. The raw numbers are in `data/a3-random100.json` and
+`data/a3-5x2.json`; the [Evaluation tab](https://soyapo.github.io/sand-boxes/assignment-3/#eval)
+draws both.
 
-As the brief asks, the report proper is for the students to write; this document records what
-was measured, so that the report can quote it.
+## 1. 100 random problems, GA against A\* and UCS
 
-## 1. Setup
+### 1.1 Setup
 
 | | |
 |---|---|
-| Instances | all 3¹⁰ = 59,049 initial states of the 5×2 grid, sand only, every gate closed; one of them (the empty grid) is already a goal |
-| Optimum | value iteration over the whole reachable state graph (326,041 states), as in Assignments 1 and 2 |
-| Runs per state | 19: the greedy approach of the assignment, A\* with h₂, the default genetic algorithm and 16 variants of it |
-| Random seed | the same seed per state for every variant, so the variants differ only in what is changed |
-| Default parameters | population 60, at most 150 generations, stop after 50 without improvement, length ≤ 20, elite 2, crossover 0.9, mutation 0.3, roulette on f − f_min, fitness `large − 9 · gates − cost`, repair on |
-| Machine | Apple M5, 10 logical cores, Node.js 26, 7 worker threads |
-| Optimal cost | mean 50.99, median 52, 95th percentile 65, maximum 76 |
-| Optimal plan length | mean 11.18 actions, maximum 18; 78.3% of optimal plans use at least one side gate |
+| Problems | 100 distinct random initial states per grid size, drawn with the assignment's probabilities (empty 0.5, full 0.3, half 0.2), seed 1; the 5×2 grid and the harder 6×2 grid |
+| Reference | A\* with h₂ and uniform-cost search on every problem; they agree on every optimum |
+| GA | one run per problem and configuration, seed 1 mixed with the initial state; the default configuration and 12 alternatives, each changing one thing |
+| Defaults | population 60, at most 150 generations, stop after 50 without improvement, length bound 4 per row (20 and 24), elite 2, crossover 0.9, mutation 0.3, roulette on f − f_min, fitness `L − 9·gates − cost`, conflict number = smallest along the sequence, all six mutations, single-point crossover, repair |
+| Convention | when the GA does not reach the goal, `GA_Path_cost` is the path cost of the fittest sequence it returned: an unfinished path, so cheap (and in the "illegal kept with fitness 0" configuration an arbitrary illegal sequence, whose cost is that of its legal prefix). The all-problems mean of a failing configuration therefore drops *below* 1; the per-problem rows keep the two numbers apart |
+| Noise | one seed per problem; a difference of four or five problems in 100 between two configurations is within what another seed would change, so only the larger gaps below are read as differences |
+| Machine | Apple M5, Node.js 26, one thread; 44 s for the 5×2 set, 233 s for the 6×2 set (A\* and UCS dominate the latter) |
 
-**Timings.** The machine slept once during the run. The runs in flight at that moment recorded
-minutes instead of milliseconds, which inflates the *means* of the time columns; the medians are
-unaffected and are what is reported below. The quality numbers (success, optimality, cost
-ratios, evaluations) do not depend on timing at all and are exact.
+`node scripts/evaluate-ga.mjs` reproduces both sets.
 
-## 2. Headline
+### 1.2 The four numbers of the brief, default configuration
 
-| | Genetic algorithm (default) | Greedy approach | A\* with h₂ |
+<!-- gen:headline -->
+| | 5×2 | 6×2 |
+|---|---:|---:|
+| Problems | 100 | 100 |
+| Mean optimal cost (max) | 43.6 (69) | 57.5 (81) |
+| Mean optimal plan length (max) | 9.9 actions (15) | 12.7 actions (20) |
+| **GA successes (goal reached)** | **100 / 100** | **100 / 100** |
+| **Successes with the optimal path cost** | **48 (48%)** | **25 (25%)** |
+| **Mean GA_Path_cost ÷ optimum, all 100** | **1.041** | **1.075** |
+| **Mean ratio, successes only** | **1.041** | **1.075** |
+| Worst ratio | 1.24 | 1.36 |
+| Mean excess of the non-optimal solutions | 7.9% | 10.1% |
+| Mean fitness evaluations | 5,283 | 6,326 |
+| Mean generations run | 69.2 | 83.0 |
+| Median time per problem | 24.5 ms | 46.7 ms |
+| A\*: mean states expanded, median time | 6,085 · 5.6 ms | 75,825 · 82.3 ms |
+| UCS: mean states expanded, median time | 15,638 · 7.2 ms | 189,817 · 129.5 ms |
+<!-- /gen:headline -->
+<!-- gen:dist -->
+Distribution of the ratio for the default configuration. 5x2: exactly 1 on 48, (1.00, 1.05) on 21, [1.05, 1.10) on 14, [1.10, 1.15) on 12, [1.15, 1.20) on 2, [1.20, 1.25) on 3. 6x2: exactly 1 on 25, (1.00, 1.05) on 20, [1.05, 1.10) on 20, [1.10, 1.15) on 21, [1.15, 1.20) on 9, [1.20, 1.25) on 3, [1.25, 1.30) on 1, [1.35, 1.40) on 1.
+<!-- /gen:dist -->
+
+What the numbers say:
+
+* **The genetic algorithm reaches the goal on every problem**, on both grids, and a goal path is
+  already present in generation 0 on every one of them (mean "first goal in generation" 0.00).
+  The initial population consists of random legal walks of the full length, and in this puzzle
+  such a walk empties the grid more often than not. The algorithm's work is therefore not to find
+  a solution but to make it cheap.
+* **Half of the 5×2 solutions are optimal, a quarter of the 6×2 ones.** The non-optimal ones are
+  8% (5×2) and 10% (6×2) above the optimum on average and never more than 36% above it. For
+  comparison, the greedy approach of Assignment 1 is 18% above the optimum on average on the 5×2
+  grid.
+* **Against A\* and UCS.** Both searches are exact, the genetic algorithm is not. On the 5×2 grid
+  A\* is also faster (median 6 ms against 25 ms); on the 6×2 grid the orders reverse (82 ms
+  against 47 ms) and UCS is three times slower than the GA, because the searches grow with the
+  state space while the GA's cost is set by its parameters: about 6,300 evaluations and a memory
+  of 120 individuals whatever the instance, against 75,825 expanded states for A\*. One row
+  larger again, on a 7×2 instance with 15 half-units of sand, the GA returned a plan of cost 113
+  in 90 ms (the greedy approach: 112), while A\* and UCS run back to back on 7×2 instances
+  exceeded Node's default heap in our test; whether the GA's plans stay near the optimum there we
+  cannot say, because no optimum is available.
+
+### 1.3 Every configuration
+
+5×2, 100 problems:
+
+<!-- gen:configs-5x2 -->
+| Configuration | Successes | Optimal (of successes) | Mean ratio, all | Mean ratio, successes | Worst | Mean evaluations | Median ms |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| **GA (default)** | 100 | 48 (48%) | 1.041 | 1.041 | 1.24 | 5,283 | 24.5 |
+| conflicts of the end state | 100 | 46 (46%) | 1.041 | 1.041 | 1.22 | 5,130 | 13.8 |
+| mutations of the brief only (replace, swap, reverse) | 100 | 47 (47%) | 1.040 | 1.040 | 1.25 | 5,213 | 21.9 |
+| double-point crossover | 100 | 50 (50%) | 1.039 | 1.039 | 1.18 | 5,300 | 27.5 |
+| lethal mutation: retry instead of repair | 100 | 30 (30%) | 1.081 | 1.081 | 1.48 | 15,710 | 19.5 |
+| illegal kept with fitness 0, no repair | 7 | 7 (100%) | 0.439 | 1.000 | 1.00 | 7,012 | 7.8 |
+| strict fitness (0 unless the goal is reached) | 100 | 45 (45%) | 1.043 | 1.043 | 1.19 | 5,230 | 23.6 |
+| conflicts = boxes with sand | 100 | 21 (21%) | 1.090 | 1.090 | 1.39 | 4,480 | 11.7 |
+| conflicts = h₃ (fall distance) | 100 | 52 (52%) | 1.035 | 1.035 | 1.16 | 5,347 | 21.7 |
+| conflicts = h₂ unweighted (admissible) | 100 | 25 (25%) | 1.097 | 1.097 | 1.36 | 4,122 | 9.6 |
+| plain roulette | 100 | 36 (36%) | 1.056 | 1.056 | 1.21 | 5,218 | 23.7 |
+| tournament selection | 100 | 48 (48%) | 1.033 | 1.033 | 1.15 | 5,093 | 20.0 |
+| population 20 | 100 | 33 (33%) | 1.054 | 1.054 | 1.43 | 1,759 | 7.1 |
+| population 200 | 100 | 64 (64%) | 1.028 | 1.028 | 1.17 | 16,610 | 80.2 |
+| A\* with h₂ | 100 | 100 (100%) | 1 | 1 | 1 | 6,085 expanded | 5.6 |
+| UCS | 100 | 100 (100%) | 1 | 1 | 1 | 15,638 expanded | 7.2 |
+<!-- /gen:configs-5x2 -->
+
+6×2, 100 problems:
+
+<!-- gen:configs-6x2 -->
+| Configuration | Successes | Optimal (of successes) | Mean ratio, all | Mean ratio, successes | Worst | Mean evaluations | Median ms |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| **GA (default)** | 100 | 25 (25%) | 1.075 | 1.075 | 1.36 | 6,326 | 46.7 |
+| conflicts of the end state | 100 | 22 (22%) | 1.079 | 1.079 | 1.32 | 6,253 | 24.5 |
+| mutations of the brief only (replace, swap, reverse) | 100 | 24 (24%) | 1.078 | 1.078 | 1.38 | 6,420 | 35.9 |
+| double-point crossover | 100 | 21 (21%) | 1.076 | 1.076 | 1.33 | 6,293 | 52.7 |
+| lethal mutation: retry instead of repair | 100 | 19 (19%) | 1.171 | 1.171 | 1.59 | 18,648 | 28.2 |
+| illegal kept with fitness 0, no repair | 0 | — | 0.321 | — | — | 7,071 | 8.9 |
+| strict fitness (0 unless the goal is reached) | 100 | 26 (26%) | 1.073 | 1.073 | 1.23 | 6,191 | 49.3 |
+| conflicts = boxes with sand | 100 | 10 (10%) | 1.179 | 1.179 | 1.48 | 4,586 | 16.0 |
+| conflicts = h₃ (fall distance) | 100 | 28 (28%) | 1.062 | 1.062 | 1.25 | 5,655 | 38.9 |
+| conflicts = h₂ unweighted (admissible) | 100 | 10 (10%) | 1.172 | 1.172 | 1.48 | 4,208 | 15.6 |
+| plain roulette | 100 | 19 (19%) | 1.090 | 1.090 | 1.31 | 6,611 | 56.9 |
+| tournament selection | 100 | 30 (30%) | 1.053 | 1.053 | 1.23 | 5,927 | 38.6 |
+| population 20 | 100 | 19 (19%) | 1.095 | 1.095 | 1.42 | 2,072 | 13.7 |
+| population 200 | 100 | 30 (30%) | 1.058 | 1.058 | 1.23 | 20,244 | 144.8 |
+| A\* with h₂ | 100 | 100 (100%) | 1 | 1 | 1 | 75,825 expanded | 82.3 |
+| UCS | 100 | 100 (100%) | 1 | 1 | 1 | 189,817 expanded | 129.5 |
+<!-- /gen:configs-6x2 -->
+
+### 1.4 What the alternatives say about the seven steps
+
+* **Step 4, the conflict number.** The brief's rule, the smallest value along the sequence, is
+  slightly ahead of the end-state value (48% against 46% optimal on 5×2, 25% against 22% on
+  6×2), a gap within the noise of one seed. The *kind* of count matters far more: the brief's
+  example count, boxes with sand, is the weakest (21% and 10%) because it does not see how deep the
+  sand sits, and the admissible h₂ used unweighted is just as weak (25% and 10%, ratio 1.10 and
+  1.17) for the reason given in the design notes: it rewards stopping short. The fall distance
+  h₃, which weighs every half-unit by the gates below it, is as good as or slightly better than
+  the gate count (52% / 28%).
+* **Step 5, the fitness.** The strict form (0 unless the goal is reached) is within noise of the
+  default (45% / 26% against 48% / 25%): it works here because random legal walks reach the goal,
+  and it gives selection nothing to prefer among unfinished paths, which on this puzzle costs
+  little.
+* **Step 6, operators.** Repair against the brief's lethal mutation is the one clear operator
+  result: 48% against 30% optimal on 5×2 and 25% against 19% on 6×2, with a third of the
+  evaluations (a likely reason: most redraws of a swap or a reverse are illegal, so the children
+  that survive are the small edits). Without repair or retry (illegal children kept with fitness 0)
+  the goal is reached on 7 problems of 100 on 5×2, all with optimal plans of at most six actions,
+  and on none on 6×2; the all-problems ratio of 0.44 and 0.32 there is the artefact of the
+  convention, not a result. The brief's three mutations alone (47% / 24%) and double-point
+  crossover (50% / 21%) are within noise of the default; the length-changing mutations and the
+  single-point crossover are kept as defaults for the reasons in the design notes, not because the
+  measurement decides it.
+* **Step 7, selection.** Plain roulette is the weakest method (36% / 19%), for the reason given
+  in the design notes: with `large_number` inside every fitness the wheel is nearly uniform.
+  Subtracting the worst fitness (the default) gives 48% / 25%; the tournament of three 48% / 30%.
+* **Effort.** Population 200 buys 16 points on 5×2 for three times the evaluations and five on
+  6×2: on the larger grid the length of the plans, more than the size of the population, is the
+  limit. Population 20 runs in 7 ms and still solves everything, at 33% optimal.
+
+### 1.5 The assignment's example
+
+On the 4×2 example (optimum 38, greedy approach 47, the assignment's side-gate plan 45), the
+default configuration over the seeds 1 to 10 finds the optimum 38 five times, 41 once and 42
+four times (length bound 16, mean 39.9); with h₃ as the conflict number it finds 38 eight times
+and 41 and 42 once each (mean 38.7). The Evolve tab replays any of these runs generation by
+generation.
+
+## 2. Every initial state of the 5×2 grid (first version of the algorithm)
+
+This run covers all 3¹⁰ = 59,049 initial states, 19 runs each, with the optimum from value
+iteration over the whole state graph. It was made with the **first version** of the algorithm,
+which differed from the current defaults in three ways: the conflict number was taken at the end
+state (not the smallest along the sequence), the initial walks had random lengths up to the
+bound, and only the four mutations replace / insert / delete / regrow existed. It has not been
+recomputed (about 45 minutes of every core); it is kept because its comparison of selection
+methods, fitness forms and conflict functions is broadly consistent with section 1, and because
+its size gives the finer pictures below.
+
+### 2.1 Headline
+
+| | GA (first version, default) | Greedy approach | A\* with h₂ |
 |---|---:|---:|---:|
 | Reaches the goal | 59,049 of 59,049 (100%) | 100% | 100% |
 | Plan is optimal | 15,884 (26.9%) | 1,489 (2.5%) | 100% |
@@ -42,19 +185,10 @@ ratios, evaluations) do not depend on timing at all and are exact.
 | Peak memory | 120 individuals | 1 state | 22,200 states (mean) |
 | Median time per state | 13.0 ms | 0.008 ms | 10.0 ms |
 
-Two things to read from this. First, **the genetic algorithm is not finding feasibility, it is
-optimising cost**: because the initial population consists of random legal walks, a goal path is
-usually present in generation 0 and the generations that follow make it cheaper. On a seeded
-sample of 400 random 5×2 initial states the first goal path appeared in generation 0 on 369
-(92%), by generation 2 on 396 (99%), and at the latest in generation 38; on average 10.7% of the
-first population already reaches the goal (30% on the assignment's 4×2 example). Second, it does so
-with about 40% of A\*'s evaluations and a fixed memory of 120 individuals, but gives up optimality:
-it halves the greedy approach's excess over the optimum (6.6% against 18.0%) rather than
-removing it.
+Times are medians: the machine slept once during this run, which inflated a few individual
+timings and with them the means; the quality numbers do not depend on timing and are exact.
 
-## 3. GA_opt_ratio = cost of the genetic algorithm ÷ optimum cost
-
-Default variant, 59,048 states with sand.
+### 2.2 GA_opt_ratio = cost of the genetic algorithm ÷ optimum cost
 
 | Ratio | States | Share |
 |---|---:|---:|
@@ -72,29 +206,22 @@ Default variant, 59,048 states with sand.
 
 ![GA_opt_ratio](figures/a3-5x2-ratio-hist.svg)
 
-For comparison, `Greedy_opt_ratio` on the same states: 2.5% exactly 1, mode in [1.15, 1.25),
-maximum 1.41 (figure in [a2-report.md](a2-report.md)).
+### 2.3 The two scatter plots
 
-## 4. The two scatter plots
-
-**Cost of the GA plan against the optimum.** The cloud sits just above the diagonal and widens
-with the optimum: the expensive states, which need long plans with several side gates, are where
-the algorithm falls short.
+The cloud of GA cost against the optimum sits just above the diagonal and widens with the
+optimum: the expensive states, which need long plans with several side gates, are where the
+algorithm falls short.
 
 ![GA cost against the optimum](figures/a3-5x2-ga-vs-opt.svg)
 
-**Number of actions against number of side-gate (type b) actions, GA plans.** The GA's plans
-have 9.91 actions on average against 11.18 for the optimal plans, and only 42.0% of them use a
-side gate, against 78.3% of the optimal plans. The cheap plans of this puzzle are the long ones
-that level boxes sideways before flushing; the algorithm finds the shorter, straighter plans more
-easily.
+The GA's plans have 9.91 actions on average against 11.18 for the optimal plans, and only 42.0%
+of them use a side gate against 78.3% of the optimal plans: the cheap plans of this puzzle are the
+long ones that level boxes sideways before flushing, and the algorithm finds the shorter,
+straighter plans more easily.
 
 ![Actions against side gates, GA plans](figures/a3-5x2-actions-vs-sides.svg)
 
-## 5. Optimality against the length of the optimal plan
-
-Share of states where the default variant's plan is optimal, by the number of actions in the
-optimal plan:
+### 2.4 Optimality against the length of the optimal plan
 
 | Optimal plan length | States | GA optimal | Share |
 |---:|---:|---:|---:|
@@ -116,109 +243,47 @@ The goal is reached on every state at every length; what degrades is optimality.
 actions with the right side gates in the right places is a needle in the space of legal
 sequences, and 60 individuals for at most 150 generations do not find it.
 
-## 6. Variants
+### 2.5 Variants (first version)
 
-One change at a time from the default. "Goal" is the share of states where a goal path was found,
-"optimal" the share where it was optimal.
-
-| Variant | Goal | Optimal | Mean cost ÷ opt | Median | Worst | Mean evaluations | Median time (ms) |
+| Variant | Goal | Optimal | Mean cost ÷ opt | Median | Worst | Mean evaluations | Median ms |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| **GA (default)** | 100% | 26.9% | 1.066 | 1.062 | 1.55 | 5,842 | 13.0 |
-| *Selection* | | | | | | | |
-| plain roulette pᵢ = fᵢ / Σf | 100% | 22.1% | 1.075 | 1.071 | 1.38 | 6,014 | 14.9 |
+| **default (end-state conflicts)** | 100% | 26.9% | 1.066 | 1.062 | 1.55 | 5,842 | 13.0 |
+| plain roulette | 100% | 22.1% | 1.075 | 1.071 | 1.38 | 6,014 | 14.9 |
 | linear ranking | 100% | 28.9% | 1.061 | 1.055 | 1.50 | 5,679 | 11.9 |
 | tournament of 3 | 100% | 30.8% | 1.057 | 1.049 | 1.52 | 5,378 | 10.7 |
-| *Fitness form* | | | | | | | |
-| strict: L − cost at the goal, else 0 | 100% | 24.2% | 1.071 | 1.068 | 1.39 | 5,713 | 12.0 |
-| ratio: L ÷ (1 + w·c + cost) | 100% | 27.4% | 1.065 | 1.061 | 1.48 | 5,863 | 13.4 |
-| *conflict_numbers* | | | | | | | |
-| sand left × 9 | 100% | 24.3% | 1.074 | 1.065 | 1.52 | 5,872 | 13.8 |
-| fall distance h₃ × 1.2 | 100% | 32.5% | 1.054 | 1.042 | 1.48 | 5,682 | 12.8 |
-| cost of the greedy approach from the state | 100% | 22.5% | 1.091 | 1.077 | 1.80 | 4,907 | 14.2 |
-| h₂ unweighted (admissible) | 99.99% | 7.1% | 1.173 | 1.170 | 1.71 | 3,957 | 6.6 |
-| regression estimate h₄ × 1.35 | 100% | 27.9% | 1.068 | 1.059 | 1.51 | 6,090 | 15.9 |
+| strict fitness | 100% | 24.2% | 1.071 | 1.068 | 1.39 | 5,713 | 12.0 |
+| ratio fitness | 100% | 27.4% | 1.065 | 1.061 | 1.48 | 5,863 | 13.4 |
+| conflicts = sand × 9 | 100% | 24.3% | 1.074 | 1.065 | 1.52 | 5,872 | 13.8 |
+| conflicts = h₃ × 1.2 | 100% | 32.5% | 1.054 | 1.042 | 1.48 | 5,682 | 12.8 |
+| conflicts = greedy cost | 100% | 22.5% | 1.091 | 1.077 | 1.80 | 4,907 | 14.2 |
+| conflicts = h₂ unweighted | 99.99% | 7.1% | 1.173 | 1.170 | 1.71 | 3,957 | 6.6 |
+| conflicts = h₄ × 1.35 | 100% | 27.9% | 1.068 | 1.059 | 1.51 | 6,090 | 15.9 |
 | none, strict fitness | 100% | 24.2% | 1.071 | 1.068 | 1.39 | 5,713 | 10.4 |
-| *Operators* | | | | | | | |
-| no repair (random action ids, illegal → 0) | 1.1% | 0.8% | 1.026 | 1.000 | 1.30 | 6,886 | 7.4 |
+| illegal kept with fitness 0 | 1.1% | 0.8% | 1.026 | 1.000 | 1.30 | 6,886 | 7.4 |
 | no crossover | 100% | 26.9% | 1.065 | 1.060 | 1.55 | 5,970 | 9.3 |
 | no mutation | 99.96% | 23.8% | 1.074 | 1.069 | 1.74 | 4,424 | 9.2 |
-| *Population* | | | | | | | |
-| 20 | 99.98% | 19.6% | 1.083 | 1.078 | 1.78 | 1,908 | 4.1 |
-| 200 | 100% | 32.2% | 1.056 | 1.047 | 1.37 | 18,881 | 43.3 |
+| population 20 | 99.98% | 19.6% | 1.083 | 1.078 | 1.78 | 1,908 | 4.1 |
+| population 200 | 100% | 32.2% | 1.056 | 1.047 | 1.37 | 18,881 | 43.3 |
 
 ![Mean cost ratio per variant](figures/a3-5x2-ratio.svg)
 
 ![Optimal share per variant](figures/a3-5x2-optimal-share.svg)
 
-What the ablations say:
+Findings that section 1 does not already cover: the admissible h₂ used unweighted as the
+conflict number drops optimality to 7.1% and the ratio to the greedy level (1.173), as predicted
+in the design notes; the greedy cost as conflict number, an exact upper bound, is the worst of the
+weighted estimates (22.5%, worst case 1.80), most likely because where it is tight a partial path
+ties with its own completion; removing crossover changes nothing measurable while removing
+mutation costs three points and leaves 23 states unsolved; the ratio form of the fitness is as
+good as the subtraction form.
 
-* **Repair is the algorithm.** Without it (uniformly random action ids, illegal sequences scored
-  0 as the brief says) a goal path is found on 644 states, 1.1%, and only where the optimal plan
-  is short: all 4 states with a one-action optimum, 15 of 16 with two, 51 of 60 with three, then
-  95 of 196, 92 of 538, and nothing beyond 14 actions. The plans it does find are often optimal
-  because they are the short plans a random sequence can hit.
-* **A pessimistic conflict count is necessary.** With the admissible h₂ unweighted the fittest
-  individual is a short unfinished path (the design notes, section 4.2); goal paths still appear
-  as by-products of the random walks, so the goal is reached, but the plans are no better than the
-  greedy approach's (optimal on 7.1%, mean ratio 1.173 against the greedy 1.180). The same h₂
-  counted in gates and multiplied by the maximal action cost, 9, is the default and gives 26.9%.
-* **Among the pessimistic estimates the finer one wins.** The fall distance h₃, which weighs every
-  half-unit of sand by the gates below it, is the best conflict function tried (32.5% optimal,
-  ratio 1.054). The naive sand count is the weakest of the counts (24.3%). The cost of the greedy
-  approach, an exact upper bound, does worst of the weighted estimates (22.5%, worst case 1.80).
-  A likely reason: it is tight on 10% of states, and there a partial path ties with its own
-  completion, so the pressure to finish disappears.
-* **The constant inside the fitness matters for roulette.** The textbook wheel on the raw fitness,
-  where every value is `large_number` minus something, is the weakest selection (22.1%).
-  Subtracting the worst fitness (the default) gives 26.9%, ranking 28.9%, a tournament of three
-  30.8%: the more the method depends on order rather than on the value, the better.
-* **The strict form works here, for a reason specific to this problem.** Returning 0 for every
-  unfinished path costs less than three points (24.2% against 26.9%), because random legal walks
-  reach the goal often enough for selection to work on goal paths alone. With the `strict` form
-  the conflict function is irrelevant, as the identical row "none, strict" shows. The ratio form
-  is as good as the default (27.4%); the likely reason is that the window subtracted before the
-  wheel undoes most of its compression of the differences.
-* **Crossover and mutation are individually dispensable, together not.** No crossover changes
-  nothing measurable (26.9%); no mutation costs three points and leaves 23 states unsolved, with
-  the worst ratio rising to 1.74: without the random edits a population can fix on a plan it cannot
-  leave.
-* **Population size buys quality roughly logarithmically.** 20 individuals: 19.6% at 1,908
-  evaluations; 60: 26.9% at 5,842; 200: 32.2% at 18,881. Ten times the evaluations for 13 points.
-
-## 7. Effort and time
-
-| | Mean evaluations / expanded | Mean actions applied / generated | Peak memory | Median time per state |
-|---|---:|---:|---:|---:|
-| GA (default) | 5,842 | 51,255 | 120 | 13.0 ms |
-| GA, population 20 | 1,908 | 18,058 | 40 | 4.1 ms |
-| GA, population 200 | 18,881 | 154,482 | 400 | 43.3 ms |
-| A\* with h₂ | 13,976 | 95,430 | 22,200 (mean) | 10.0 ms |
-| Greedy approach | 9 | 50 | 1 | 0.008 ms |
-
-The genetic algorithm's memory is the population and its children, 2 × population individuals,
-regardless of the state; A\*'s grows with the instance (up to 130,701 states on the hardest). In
-time per state the two are close on this grid, because A\* with a good heuristic is fast here;
-the genetic algorithm's advantage is that its cost is set by the parameters, not by the instance.
-
-![Evaluations per variant](figures/a3-5x2-evaluations.svg)
-
-![Median time per state](figures/a3-5x2-time.svg)
-
-## 8. The assignment's example
-
-On the 4×2 example (optimum 38, greedy approach 47, the assignment's side-gate plan 45), the
-default run with seed 1 returns a plan of cost 42 in 8 actions, found in generation 5 and
-confirmed over the following 50 generations without improvement, after 4,193 fitness
-evaluations. Over the seeds 1 to 10 the default finds the optimum 38 four times and 42 six times
-(mean 40.4); with h₃ as the conflict function it finds 38 nine times and 41 once (mean 38.3). The Evolve tab replays any of these
-runs generation by generation.
-
-## 9. Reproducing
+## 3. Reproducing
 
 ```bash
-node scripts/analyze.mjs --only a3-5x2.json      # every variant on all 59,049 states (about 45 minutes on 7 cores)
+node scripts/evaluate-ga.mjs                     # section 1: 100 random problems, 5×2 and 6×2 (about 5 minutes, one thread)
+node scripts/analyze.mjs --only a3-5x2.json      # section 2: every variant on all 59,049 states (about 45 minutes, every core)
 node scripts/figures.mjs                         # the figures above, into docs/figures/
 npm run evolve -- "1 0 / 0 1 / 0 1 / 1 0"        # one run with the log of every generation
 npm run evolve -- "1 0 / 0 1 / 0 1 / 1 0" --compare
-npm test                                         # includes the genetic-algorithm tests
+npm test
 ```

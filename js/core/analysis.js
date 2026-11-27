@@ -29,20 +29,27 @@ export const ALL_VARIANTS = Object.freeze([
   { key: 'astar-learned', algo: 'astar', h: 'learned', label: 'A* (h₄ regression)' },
   { key: 'astar-safe', algo: 'astar', h: 'learned-safe', label: 'A* (h₅ scaled)' },
   { key: 'rbfs-learned', algo: 'rbfs', h: 'learned', label: 'RBFS (h₄)', maxExpanded: RBFS_BUDGET },
-  // Assignment 3: the genetic algorithm and its ablations (same seed per instance in every variant)
+  // Assignment 3: the genetic algorithm and its ablations (same seed per instance in every variant).
+  // Each variant changes one thing from the defaults of genetic.js.
   { key: 'ga', algo: 'ga', h: 'gap', label: 'GA (default)', ga: {} },
+  { key: 'ga-end', algo: 'ga', h: 'gap', label: 'GA, conflicts of the end state', ga: { conflictMode: 'end' } },
   { key: 'ga-roulette', algo: 'ga', h: 'gap', label: 'GA, plain roulette', ga: { selection: 'roulette' } },
   { key: 'ga-rank', algo: 'ga', h: 'gap', label: 'GA, rank selection', ga: { selection: 'rank' } },
   { key: 'ga-tournament', algo: 'ga', h: 'gap', label: 'GA, tournament', ga: { selection: 'tournament' } },
   { key: 'ga-strict', algo: 'ga', h: 'gap', label: 'GA, strict fitness', ga: { fitness: 'strict' } },
   { key: 'ga-ratio', algo: 'ga', h: 'gap', label: 'GA, ratio fitness', ga: { fitness: 'ratio' } },
+  { key: 'ga-log', algo: 'ga', h: 'gap', label: 'GA, f = g = ln(1 + x)', ga: { conflictTransform: 'log', costTransform: 'log' } },
+  { key: 'ga-boxes', algo: 'ga', h: 'gap', label: 'GA, conflicts = boxes with sand', ga: { conflicts: 'boxes' } },
   { key: 'ga-sand', algo: 'ga', h: 'gap', label: 'GA, conflicts = sand', ga: { conflicts: 'sand' } },
   { key: 'ga-fall', algo: 'ga', h: 'gap', label: 'GA, conflicts = h₃', ga: { conflicts: 'fall' } },
   { key: 'ga-sweep', algo: 'ga', h: 'gap', label: 'GA, conflicts = greedy cost', ga: { conflicts: 'sweep' } },
   { key: 'ga-h2', algo: 'ga', h: 'gap', label: 'GA, conflicts = h₂ unweighted', ga: { conflicts: 'h2' } },
   { key: 'ga-learned', algo: 'ga', h: 'gap', label: 'GA, conflicts = h₄', ga: { conflicts: 'learned' } },
   { key: 'ga-zero', algo: 'ga', h: 'gap', label: 'GA, no conflicts, strict', ga: { conflicts: 'zero', fitness: 'strict' } },
-  { key: 'ga-norepair', algo: 'ga', h: 'gap', label: 'GA, no repair', ga: { repair: false } },
+  { key: 'ga-brief-ops', algo: 'ga', h: 'gap', label: 'GA, mutations of the brief only', ga: { mutations: 'brief' } },
+  { key: 'ga-double', algo: 'ga', h: 'gap', label: 'GA, double-point crossover', ga: { crossover: 'double' } },
+  { key: 'ga-retry', algo: 'ga', h: 'gap', label: 'GA, lethal mutation (retry)', ga: { illegal: 'retry' } },
+  { key: 'ga-norepair', algo: 'ga', h: 'gap', label: 'GA, illegal kept with fitness 0', ga: { illegal: 'zero' } },
   { key: 'ga-nocross', algo: 'ga', h: 'gap', label: 'GA, no crossover', ga: { crossoverRate: 0 } },
   { key: 'ga-nomut', algo: 'ga', h: 'gap', label: 'GA, no mutation', ga: { mutationRate: 0 } },
   { key: 'ga-small', algo: 'ga', h: 'gap', label: 'GA, population 20', ga: { population: 20 } },
@@ -53,12 +60,7 @@ export const ALL_VARIANTS = Object.freeze([
 export const VARIANTS = Object.freeze(ALL_VARIANTS.filter((v) => !['astar-learned', 'astar-safe', 'rbfs-learned'].includes(v.key) && v.algo !== 'ga'));
 
 /** Assignment 3: the genetic algorithm against the optimum, the greedy approach and A*, plus its ablations. */
-export const A3_VARIANTS = Object.freeze(['greedy', 'astar-gap', 'ga', 'ga-roulette', 'ga-rank', 'ga-tournament', 'ga-strict', 'ga-ratio', 'ga-sand', 'ga-fall', 'ga-sweep', 'ga-h2', 'ga-learned', 'ga-zero', 'ga-norepair', 'ga-nocross', 'ga-nomut', 'ga-small', 'ga-large']
-  .map((key) => ALL_VARIANTS.find((v) => v.key === key)));
-
-/** Assignment 2: how much each heuristic buys A* (and RBFS), plus the greedy approach for the ratio plots. */
-export const A2_VARIANTS = Object.freeze(['greedy', 'bfs', 'ucs', 'astar-volume', 'astar-gap', 'astar-learned', 'astar-safe', 'wastar', 'rbfs', 'rbfs-learned']
-  .map((key) => ALL_VARIANTS.find((v) => v.key === key)));
+export const A3_VARIANTS = Object.freeze(ALL_VARIANTS.filter((v) => ['greedy', 'astar-gap', 'ucs'].includes(v.key) || v.algo === 'ga'));
 
 /** Resolve cfg.variants (keys) to variant entries; the Assignment 1 set by default. */
 export function variantsOf(cfg) {

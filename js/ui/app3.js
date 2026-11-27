@@ -5,7 +5,7 @@ import { Sandbox, parseGrid, formatGrid, PROBS_SAND, CELL_NAMES, MAX_ROWS, EMPTY
 import { ALGORITHMS } from '../core/search.js';
 import { HEURISTICS } from '../core/heuristics.js';
 import { makeProblem } from '../core/problem.js';
-import { Problem, Environment, SolverAgent, FITNESS, SELECTION, CONFLICTS, DEFAULTS, selectionProbabilities } from '../core/genetic.js';
+import { Problem, Environment, SolverAgent, FITNESS, SELECTION, CONFLICTS, CONFLICT_MODES, TRANSFORMS, ILLEGAL, CROSSOVERS, MUTATIONS, DEFAULTS, selectionProbabilities } from '../core/genetic.js';
 import { Board } from './board.js';
 import { columns, bubbles, dotPlot, lines, fmt } from './charts.js';
 
@@ -22,7 +22,7 @@ const LEVEL_TEXT = ['0', '½', '1'];
 const DATA = new URL('../../data/', import.meta.url).href;
 
 /** Variants compared on one state by the "Compare" button (keys of analysis.js ALL_VARIANTS). */
-const COMPARE = ['greedy', 'astar-gap', 'ga', 'ga-roulette', 'ga-rank', 'ga-strict', 'ga-sand', 'ga-fall', 'ga-sweep', 'ga-h2', 'ga-norepair'];
+const COMPARE = ['greedy', 'ucs', 'astar-gap', 'ga', 'ga-end', 'ga-brief-ops', 'ga-double', 'ga-retry', 'ga-norepair', 'ga-roulette', 'ga-tournament', 'ga-strict', 'ga-boxes', 'ga-fall', 'ga-h2'];
 
 const PRESETS = [
   { name: 'Assignment example (4×2)', grid: PROFESSOR_EXAMPLE },
@@ -290,7 +290,7 @@ function params() {
   return {
     population: Math.max(2, Math.round(num('pPopulation', DEFAULTS.population))),
     generations: Math.max(1, Math.round(num('pGenerations', DEFAULTS.generations))),
-    maxLength: Math.max(1, Math.round(num('pMaxLength', DEFAULTS.maxLength))),
+    maxLength: $('pMaxLength').value === '' ? null : Math.max(1, Math.round(num('pMaxLength', 4 * S.rows))),
     elite: Math.max(0, Math.round(num('pElite', DEFAULTS.elite))),
     crossoverRate: Math.min(1, Math.max(0, num('pCrossover', DEFAULTS.crossoverRate))),
     mutationRate: Math.min(1, Math.max(0, num('pMutation', DEFAULTS.mutationRate))),
@@ -300,9 +300,16 @@ function params() {
     fitness: $('pFitness').value,
     conflicts: $('pConflicts').value,
     conflictWeight: num('pWeight', CONFLICTS[$('pConflicts').value].weight),
-    repair: $('pRepair').checked,
+    conflictMode: $('pConflictMode').value,
+    costWeight: Math.max(0, num('pCostWeight', DEFAULTS.costWeight)),
+    conflictTransform: $('pConflictTransform').value,
+    costTransform: $('pCostTransform').value,
+    illegal: $('pIllegal').value,
+    crossover: $('pCrossoverType').value,
+    mutations: [...$('pMutations').querySelectorAll('input:checked')].map((b) => b.value),
   };
 }
+const maxLengthOf = (p) => p.maxLength ?? 4 * S.rows;
 const genesText = (genes) => genes.map((a) => model.actions[a].short).join(' ');
 
 // ----------------------------------------------------------------- evolving
@@ -344,7 +351,7 @@ function renderPopulation(info, method) {
   const pop = info.population;
   const probs = selectionProbabilities(pop, method);
   const pMax = Math.max(...probs, 1e-9);
-  $('popHint').textContent = `— generation ${info.gen}, ${pct(info.goalShare)} of the population reaches the goal, ${info.unique} distinct sequences`;
+  $('popHint').textContent = `— generation ${info.gen}, ${pct(info.goalShare)} of the population reaches the goal${info.legalShare !== undefined && info.legalShare < 1 ? `, ${pct(info.legalShare)} legal` : ''}, ${info.unique} distinct sequences`;
   table.replaceChildren(
     el('thead', {}, el('tr', {}, ['#', 'Sequence', 'Length', 'path_cost', 'conflict_numbers', 'fitness', `p(selected), ${SELECTION[method].name.toLowerCase()}`].map((t, i) => el('th', { className: i >= 2 ? 'num' : '', textContent: t })))),
     el('tbody', {}, pop.map((x, i) => {
@@ -377,7 +384,7 @@ function showResult(label, r, optimum) {
   );
   const dl = el('dl');
   const rows = r.ga
-    ? [['Generations run', int(r.ga.generations)], ['First goal path in generation', r.ga.firstGoalGeneration < 0 ? '—' : r.ga.firstGoalGeneration], ['Best fitness reached in generation', int(r.ga.bestGeneration)], ['Fitness evaluations', int(r.expanded)], ['Actions applied in the environment', int(r.generated)], ['large_number', int(r.ga.largeNumber)], ['Time', `${fmtMs(r.timeMs)} ms`]]
+    ? [['Generations run', int(r.ga.generations)], ['First goal path in generation', r.ga.firstGoalGeneration < 0 ? '—' : r.ga.firstGoalGeneration], ['Best fitness reached in generation', int(r.ga.bestGeneration)], ['Fitness evaluations', int(r.expanded)], ['Actions applied in the environment', int(r.generated)], ...(r.ga.retries ? [['Operators redrawn (lethal mode)', int(r.ga.retries)]] : []), ['Length bound', int(r.ga.maxLength)], ['large_number', int(r.ga.largeNumber)], ['Time', `${fmtMs(r.timeMs)} ms`]]
     : [['States expanded', int(r.expanded)], ['States generated', int(r.generated)], ['Peak memory (states)', int(r.maxMemory)], ['Time', `${fmtMs(r.timeMs)} ms`]];
   for (const [k, v] of rows) dl.append(el('dt', { textContent: k }), el('dd', { textContent: v }));
   box.append(dl);
@@ -446,7 +453,7 @@ async function evolve() {
       run.infos[run.infos.length - 1].population = r.ga.population;
       showUpTo(run.infos.length - 1);
     }
-    const label = `Genetic algorithm, ${SELECTION[p.selection].name.toLowerCase()}, ${FITNESS[p.fitness].name}, conflicts = ${CONFLICTS[p.conflicts].short}`;
+    const label = `Genetic algorithm: ${SELECTION[p.selection].name.toLowerCase()}; ${FITNESS[p.fitness].name}; conflicts = ${CONFLICTS[p.conflicts].short} (${p.conflictMode === 'min' ? 'smallest along the sequence' : 'end state'}); ${CROSSOVERS[p.crossover].name.toLowerCase()} crossover; illegal: ${ILLEGAL[p.illegal].name.toLowerCase()}`;
     showResult(label, r, S.optimum);
     loadPath(r.path, 'best individual');
     S.searching = false;
@@ -515,16 +522,22 @@ function renderOperators() {
   body.replaceChildren();
   const p = params();
   const view = makeProblem(model, S.start, 'gap');
-  const problem = new Problem(view, { maxLength: p.maxLength, conflicts: p.conflicts, conflictWeight: p.conflictWeight });
+  const problem = new Problem(view, { maxLength: p.maxLength, conflicts: p.conflicts, conflictWeight: p.conflictWeight, conflictMode: p.conflictMode });
   const env = new Environment(view);
   const agent = new SolverAgent(problem, env, { ...p, seed: demoSeed, population: 10 });
   const L = problem.largeNumber;
   const w = problem.conflictWeight;
 
   const seq = (genes, marks = []) => el('code', { className: 'seq' }, genes.length ? genes.map((a, i) => el('span', { className: marks[i] || '', textContent: model.actions[a].short })) : [el('span', { className: 'muted', textContent: '(empty)' })]);
-  const breakdown = (x) => (x.legal
-    ? `${FITNESS[p.fitness].name.replace('large', String(L)).replace('conflicts', `${w}·${fmt(x.conflicts)}`).replace('cost', String(x.cost))} = ${fmt(x.fitness)}`
-    : 'illegal action → 0');
+  const fT = TRANSFORMS[p.conflictTransform];
+  const gT = TRANSFORMS[p.costTransform];
+  const term = (t, x) => (t === TRANSFORMS.linear ? String(fmt(x)) : `${t.name.replace('x', fmt(x))}`);
+  const breakdown = (x) => {
+    if (!x.legal) return 'illegal action → 0';
+    if (p.fitness === 'strict') return x.goal ? `${L} − ${p.costWeight}·${term(gT, x.cost)} = ${fmt(x.fitness)}` : 'not at the goal → 0';
+    if (p.fitness === 'ratio') return `${L} ÷ (1 + ${w}·${term(fT, x.conflicts)} + ${p.costWeight}·${term(gT, x.cost)}) = ${fmt(x.fitness)}`;
+    return `${L} − ${w}·${term(fT, x.conflicts)} − ${p.costWeight}·${term(gT, x.cost)} = ${fmt(x.fitness)}`;
+  };
 
   // 1. representation and fitness on a small random population
   const pop = [];
@@ -532,10 +545,10 @@ function renderOperators() {
   pop.sort((a, b) => b.fitness - a.fitness);
   const methods = Object.keys(SELECTION);
   const probs = Object.fromEntries(methods.map((mth) => [mth, selectionProbabilities(pop, mth)]));
-  const head = ['#', 'Sequence (a random legal walk)', 'Length', 'Goal?', 'path_cost', 'conflicts', 'fitness = ' + FITNESS[p.fitness].name, ...methods.map((mth) => SELECTION[mth].name)];
+  const head = ['#', 'Sequence (a random legal walk)', 'Length', 'Goal?', 'path_cost', 'conflict number', 'fitness = ' + FITNESS[p.fitness].name, ...methods.map((mth) => SELECTION[mth].name)];
   const popCard = el('article', { className: 'card prose wide' }, [
-    el('h2', { textContent: '1. Individuals, fitness and selection probabilities' }),
-    el('p', { className: 'sub', textContent: `Ten random individuals for the current start state (seed ${demoSeed}). Each is a random legal walk of random length, cut at the first goal state. large_number = ${L} (= 2 · ${p.maxLength} · ${problem.maxStepCost} + 1); conflict_numbers = ${CONFLICTS[p.conflicts].name.toLowerCase()}, weight ${w}. The last columns turn fitness into a selection probability with each formula.` }),
+    el('h2', { textContent: 'Steps 2 to 5 and 7: individuals, goal test, conflict number, fitness, selection probabilities' }),
+    el('p', { className: 'sub', textContent: `Ten random individuals of the initial population for the current start state (seed ${demoSeed}): random legal walks of ${problem.maxLength} actions, cut at the first goal state (step 2 and 6.1). "Goal?" is the Path_Goal_Test (step 3). The conflict number is the ${CONFLICTS[p.conflicts].name.toLowerCase()}, ${CONFLICT_MODES[p.conflictMode].name} (step 4). large_number = ${L} (= 2 · ${problem.maxLength} · ${problem.maxStepCost} + 1), w₁ = ${w}, w₂ = ${p.costWeight}, f = ${fT.name}, g = ${gT.name} (step 5). The last columns turn fitness into a selection probability with each formula (step 7).` }),
     el('div', { className: 'table-wrap' }, el('table', { className: 'data compact' }, [
       el('thead', {}, el('tr', {}, head.map((t, i) => el('th', { className: i >= 2 ? 'num' : '', textContent: t })))),
       el('tbody', {}, pop.map((x, i) => el('tr', {}, [
@@ -549,54 +562,77 @@ function renderOperators() {
   ]);
   body.append(popCard);
 
-  // 2. crossover
+  // 2. crossover (step 6.2b)
   const A = pop[0];
   const B = pop[1];
   const rng = agent.rng;
-  const cutA = 1 + Math.floor(rng() * Math.max(1, A.genes.length));
-  const cutB = 1 + Math.floor(rng() * Math.max(1, B.genes.length));
-  const intended1 = A.genes.slice(0, cutA).concat(B.genes.slice(cutB));
-  const intended2 = B.genes.slice(0, cutB).concat(A.genes.slice(cutA));
-  const c1 = agent.build(intended1);
-  const c2 = agent.build(intended2);
-  const marksFor = (intended, built, headLen) => built.genes.map((g, i) => (i < headLen ? 'head' : intended[i] === g ? 'tail' : 'fixed'));
+  const marksFor = (intended, built, headLen, tailStart = headLen) => built.genes.map((g, i) => (i < headLen ? 'head' : i < tailStart ? 'tail' : intended[i] === g ? 'tail2' : 'fixed'));
+  let crossRows;
+  let crossNote;
+  if (p.crossover === 'double' && A.genes.length >= 2 && B.genes.length >= 2) {
+    const two = (g) => { const i = Math.floor(rng() * g.length); const j = Math.floor(rng() * g.length); return i <= j ? [i, j + 1] : [j, i + 1]; };
+    const [i, j] = two(A.genes);
+    const [k, l] = two(B.genes);
+    const intended1 = A.genes.slice(0, i).concat(B.genes.slice(k, l), A.genes.slice(j));
+    const intended2 = B.genes.slice(0, k).concat(A.genes.slice(i, j), B.genes.slice(l));
+    const c1 = agent.build(intended1, true);
+    const c2 = agent.build(intended2, true);
+    const mark = (parent, lo, hi) => parent.genes.map((g, x) => (x < lo ? 'head' : x < hi ? 'tail' : 'dim'));
+    const childMarks = (intended, built, lo, len) => built.genes.map((g, x) => (x < lo ? 'head' : x < lo + len ? (intended[x] === g ? 'tail' : 'fixed') : intended[x] === g ? '' : 'fixed'));
+    crossRows = [
+      [`Parent A, cut at ${i} and ${j}`, seq(A.genes, mark(A, i, j))],
+      [`Parent B, cut at ${k} and ${l}`, seq(B.genes, mark(B, k, l))],
+      ['Child 1 = A with B’s middle', [seq(c1.genes, childMarks(intended1, c1, i, l - k)), el('span', { className: 'muted', textContent: ` cost ${c1.cost}, fitness ${fmt(c1.fitness)}${c1.goal ? ', reaches the goal' : ''}` })]],
+      ['Child 2 = B with A’s middle', [seq(c2.genes, childMarks(intended2, c2, k, j - i)), el('span', { className: 'muted', textContent: ` cost ${c2.cost}, fitness ${fmt(c2.fitness)}${c2.goal ? ', reaches the goal' : ''}` })]],
+    ];
+    crossNote = 'Double-point crossover of the two fittest individuals above: the segments between two cut points are exchanged. The new middle and whatever follows it are replayed from the state the prefix ends in; actions that are illegal there are repaired (red).';
+  } else {
+    const cutA = 1 + Math.floor(rng() * Math.max(1, A.genes.length));
+    const cutB = 1 + Math.floor(rng() * Math.max(1, B.genes.length));
+    const intended1 = A.genes.slice(0, cutA).concat(B.genes.slice(cutB));
+    const intended2 = B.genes.slice(0, cutB).concat(A.genes.slice(cutA));
+    const c1 = agent.build(intended1, true);
+    const c2 = agent.build(intended2, true);
+    crossRows = [
+      [`Parent A, cut after ${cutA}`, seq(A.genes, A.genes.map((g, x) => (x < cutA ? 'head' : 'dim')))],
+      [`Parent B, cut after ${cutB}`, seq(B.genes, B.genes.map((g, x) => (x < cutB ? 'dim' : 'tail')))],
+      ['Child 1 = prefix A + suffix B', [seq(c1.genes, marksFor(intended1, c1, cutA)), el('span', { className: 'muted', textContent: ` cost ${c1.cost}, fitness ${fmt(c1.fitness)}${c1.goal ? ', reaches the goal' : ''}` })]],
+      ['Child 2 = prefix B + suffix A', [seq(c2.genes, marksFor(intended2, c2, cutB)), el('span', { className: 'muted', textContent: ` cost ${c2.cost}, fitness ${fmt(c2.fitness)}${c2.goal ? ', reaches the goal' : ''}` })]],
+    ];
+    crossNote = 'Single-point crossover of the two fittest individuals above, with independent cut points because the parents differ in length. The suffix is replayed from the state the prefix ends in; actions that are illegal there are replaced by random legal ones (repair, shown in red).';
+  }
   const crossCard = el('article', { className: 'card prose' }, [
-    el('h2', { textContent: '2. Crossover' }),
-    el('p', { className: 'sub', textContent: 'One-point crossover of the two fittest individuals above, with independent cut points because the parents differ in length. The tail is replayed from the state the head ends in; actions that are illegal there are replaced by random legal ones (repair, shown in red).' }),
-    el('dl', { className: 'ops' }, [
-      el('dt', { textContent: `Parent A, cut after ${cutA}` }), el('dd', {}, seq(A.genes, A.genes.map((g, i) => (i < cutA ? 'head' : 'dim')))),
-      el('dt', { textContent: `Parent B, cut after ${cutB}` }), el('dd', {}, seq(B.genes, B.genes.map((g, i) => (i < cutB ? 'dim' : 'tail')))),
-      el('dt', { textContent: 'Child 1 = head A + tail B' }), el('dd', {}, [seq(c1.genes, marksFor(intended1, c1, cutA)), el('span', { className: 'muted', textContent: ` cost ${c1.cost}, fitness ${fmt(c1.fitness)}${c1.goal ? ', reaches the goal' : ''}` })]),
-      el('dt', { textContent: 'Child 2 = head B + tail A' }), el('dd', {}, [seq(c2.genes, marksFor(intended2, c2, cutB)), el('span', { className: 'muted', textContent: ` cost ${c2.cost}, fitness ${fmt(c2.fitness)}${c2.goal ? ', reaches the goal' : ''}` })]),
-    ]),
-    el('p', { className: 'note', textContent: 'A child can be shorter than the sum of its parts: the replay stops at the first goal state, and at the length bound.' }),
+    el('h2', { textContent: `Step 6.2b: ${CROSSOVERS[p.crossover].name.toLowerCase()} crossover` }),
+    el('p', { className: 'sub', textContent: crossNote }),
+    el('dl', { className: 'ops' }, crossRows.flatMap(([k, v]) => [el('dt', { textContent: k }), el('dd', {}, v)])),
+    el('p', { className: 'note', textContent: `A child can be shorter than the sum of its parts: the replay stops at the first goal state, and at the length bound (${problem.maxLength}).${p.illegal === 'retry' ? ' In the lethal mode an illegal child is not repaired but redrawn; the demonstration repairs so that the cut points can be shown.' : ''}` }),
   ]);
   body.append(crossCard);
 
-  // 3. mutation: four edits of the same parent
+  // 3. mutation (step 6.2a): one edit of each enabled kind on the same parent
   const mutCard = el('article', { className: 'card prose' }, [
-    el('h2', { textContent: '3. Mutation' }),
-    el('p', { className: 'sub', textContent: 'Four mutations of the fittest individual, one per kind. The edit position is random; what follows it is repaired where it no longer fits.' }),
+    el('h2', { textContent: 'Step 6.2a: mutation' }),
+    el('p', { className: 'sub', textContent: `One mutation of the fittest individual per enabled kind. The edit position is random; what follows it is replayed and ${p.illegal === 'repair' ? 'repaired where it no longer fits' : p.illegal === 'retry' ? 'the edit is redrawn while the child is illegal (lethal mutation)' : 'left as it is: an illegal child keeps fitness 0'}.` }),
   ]);
   const dl = el('dl', { className: 'ops' });
   dl.append(el('dt', { textContent: 'Parent' }), el('dd', {}, seq(A.genes)));
-  const kinds = { point: 'replace one action', insert: 'insert an action', delete: 'delete an action', regrow: 'cut and regrow' };
-  for (const [kind, label] of Object.entries(kinds)) {
+  for (const kind of p.mutations) {
+    if (A.genes.length < 2 && (kind === 'swap' || kind === 'reverse')) continue;
     if (!A.genes.length && (kind === 'point' || kind === 'delete')) continue;
     const child = agent.mutate(A, kind);
     const marks = child.genes.map((g, i) => (i < A.genes.length && A.genes[i] === g ? '' : 'fixed'));
-    dl.append(el('dt', { textContent: label }), el('dd', {}, [seq(child.genes, marks), el('span', { className: 'muted', textContent: ` cost ${child.cost}, fitness ${fmt(child.fitness)}${child.goal ? ', goal' : ''}` })]));
+    dl.append(el('dt', { textContent: `${MUTATIONS[kind].name}${MUTATIONS[kind].brief ? '' : ' (ours)'}` }), el('dd', {}, [seq(child.genes, marks), el('span', { className: 'muted', textContent: ` cost ${child.cost}, fitness ${fmt(child.fitness)}${child.goal ? ', goal' : ''}${child.legal ? '' : ', illegal'}` })]));
   }
-  mutCard.append(dl, el('p', { className: 'note', textContent: 'Changed or repaired actions are shown in red. Replace, insert and delete are the moves of edit distance; regrow is the large jump.' }));
+  mutCard.append(dl, el('p', { className: 'note', textContent: 'Positions that differ from the parent are shown in red (an edit, a shift, or a repair). Replace, swap and reverse are the three mutations of the brief; insert, delete and regrow are additions that change the length of the sequence.' }));
   body.append(mutCard);
 
   // 4. one generation step
   const stepCard = el('article', { className: 'card prose wide' }, [
-    el('h2', { textContent: '4. One generation' }),
+    el('h2', { textContent: 'Step 7: one generation' }),
     el('p', { className: 'sub', textContent: `Elites kept: ${Math.min(p.elite, 9)}. The other ${10 - Math.min(p.elite, 9)} parents are drawn by ${SELECTION[p.selection].name.toLowerCase()} (sorted by fitness, repeats allowed), mated in random pairs with crossover probability ${p.crossoverRate}, and each child is mutated with probability ${p.mutationRate}.` }),
   ]);
   const parents = agent.select(pop, 10 - Math.min(p.elite, 9));
-  stepCard.append(el('p', {}, [el('b', { textContent: 'Selected parents (sorted, repeats allowed): ' }), ...parents.map((x) => el('span', { className: 'chip', textContent: `#${pop.indexOf(x) + 1}` }))]));
+  stepCard.append(el('p', {}, [el('b', { textContent: 'Mating pool returned by Select (sorted by fitness, repeats allowed): ' }), ...parents.map((x) => el('span', { className: 'chip', textContent: `#${pop.indexOf(x) + 1}` }))]), el('p', { className: 'note', textContent: 'The pool is shuffled before the pairs (i, i+1) are mated, so that the fittest are not always crossed with each other; the rows of the table above show why a sorted pool paired in order would do that.' }));
   const btn = el('button', { className: 'btn', textContent: 'Draw another example' });
   btn.addEventListener('click', () => { demoSeed = (demoSeed * 7 + 3) % 10007; operatorsDirty = true; renderOperators(); });
   stepCard.append(btn);
@@ -605,16 +641,79 @@ function renderOperators() {
 
 // ---------------------------------------------------------- evaluation tab
 
+// deliverable 6 of the brief: the GA against A* and UCS on 100 random problems
+async function renderRandom100(body) {
+  let data;
+  try { data = await (await fetch(`${DATA}a3-random100.json`)).json(); } catch (err) {
+    body.append(el('div', { className: 'card', textContent: `The 100-problem evaluation (data/a3-random100.json) is not available: ${err.message}. Run "node scripts/evaluate-ga.mjs" to generate it.` }));
+    return;
+  }
+  const sets = Object.entries(data.sets);
+  body.append(el('h2', { className: 'section-title', textContent: 'The genetic algorithm against A* and UCS on 100 random problems' }));
+  const first = sets[0][1];
+  body.append(el('p', { className: 'sub', textContent: `For each grid size, ${int(first.meta.count)} distinct random initial states drawn with the assignment's probabilities (empty 0.5, full 0.3, half 0.2; seed ${first.meta.seed}). The optimum of every problem comes from A* with h₂ and from UCS, which agree. Each configuration changes one thing from the current defaults (population ${first.meta.defaults.population}, ${first.meta.defaults.generations} generations, length bound 4 per row, ${first.meta.defaults.selection === 'windowed' ? 'roulette on f − f_min' : first.meta.defaults.selection}, conflict number = closed gates with sand above, smallest along the sequence, w₁ = 9, w₂ = 1, repair). The four numbers the brief asks for are the first four columns; when the GA does not reach the goal, GA_Path_cost is the path cost of the fittest sequence it returned, which is why the all-problems mean of a failing configuration can fall below 1.` }));
+  for (const [name, set] of sets) {
+    const def = set.summary.default;
+    const tiles = [
+      ['Successes (goal reached)', `${int(def.successes)} / ${int(set.meta.count)}`, `${name} grid, default configuration`],
+      ['Successes with the optimal path cost', def.optimalShareOfSuccesses === null ? '—' : pct(def.optimalShareOfSuccesses), `${int(def.optimal)} of ${int(def.successes)} successes (A* = UCS)`],
+      ['Mean GA_Path_cost ÷ optimum, all problems', def.meanRatioAll.toFixed(3), 'failures counted with the fittest sequence'],
+      ['Mean ratio, successes only', def.meanRatioSuccesses === null ? '—' : def.meanRatioSuccesses.toFixed(3), `worst ${def.worstRatio === null ? '—' : def.worstRatio.toFixed(2)}`],
+      ['Median time per problem', `${fmt(def.medianTimeMs)} ms`, `A*: ${fmt(set.reference.astar.medianTimeMs)} ms · UCS: ${fmt(set.reference.ucs.medianTimeMs)} ms`],
+      ['Mean optimal cost', fmt(set.reference.optimum.mean), `max ${set.reference.optimum.max}; optimal plans of ${fmt(set.reference.optimum.meanSteps)} actions on average, at most ${set.reference.optimum.maxSteps}`],
+    ];
+    const card = el('div', { className: 'card' }, [el('h2', { textContent: `${name}: ${int(set.meta.count)} random problems` })]);
+    card.append(el('div', { className: 'stat-row' }, tiles.map(([k, v, s]) => el('div', { className: 'stat' }, [el('span', { textContent: k }), el('b', { textContent: v }), el('small', { textContent: s })]))));
+    const head = ['Configuration', 'Successes', 'Optimal among successes', 'Mean ratio, all', 'Mean ratio, successes', 'Worst ratio', 'Mean evaluations', 'Mean generations', 'Median time (ms)'];
+    const rows = Object.entries(set.summary).map(([key, s]) => el('tr', { className: key === 'default' ? 'hl' : '' }, [
+      el('td', { textContent: s.label }),
+      el('td', { className: 'num', textContent: `${int(s.successes)} / ${int(s.problems)}` }),
+      el('td', { className: 'num', textContent: s.optimalShareOfSuccesses === null ? '—' : `${int(s.optimal)} (${pct(s.optimalShareOfSuccesses)})` }),
+      el('td', { className: 'num', textContent: s.meanRatioAll.toFixed(3) }),
+      el('td', { className: 'num', textContent: s.meanRatioSuccesses === null ? '—' : s.meanRatioSuccesses.toFixed(3) }),
+      el('td', { className: 'num', textContent: s.worstRatio === null ? '—' : s.worstRatio.toFixed(2) }),
+      el('td', { className: 'num', textContent: fmt(s.meanEvaluations) }),
+      el('td', { className: 'num', textContent: fmt(s.meanGenerations) }),
+      el('td', { className: 'num', textContent: fmt(s.medianTimeMs) }),
+    ]));
+    rows.push(el('tr', {}, [el('td', { textContent: `${set.reference.astar.label} (reference)` }), el('td', { className: 'num', textContent: `${int(set.meta.count)} / ${int(set.meta.count)}` }), el('td', { className: 'num', textContent: `${int(set.meta.count)} (100%)` }), el('td', { className: 'num', textContent: '1.000' }), el('td', { className: 'num', textContent: '1.000' }), el('td', { className: 'num', textContent: '1.00' }), el('td', { className: 'num', textContent: `${fmt(set.reference.astar.meanExpanded)} expanded` }), el('td', { className: 'num', textContent: '—' }), el('td', { className: 'num', textContent: fmt(set.reference.astar.medianTimeMs) })]));
+    rows.push(el('tr', {}, [el('td', { textContent: `${set.reference.ucs.label} (reference)` }), el('td', { className: 'num', textContent: `${int(set.meta.count)} / ${int(set.meta.count)}` }), el('td', { className: 'num', textContent: `${int(set.meta.count)} (100%)` }), el('td', { className: 'num', textContent: '1.000' }), el('td', { className: 'num', textContent: '1.000' }), el('td', { className: 'num', textContent: '1.00' }), el('td', { className: 'num', textContent: `${fmt(set.reference.ucs.meanExpanded)} expanded` }), el('td', { className: 'num', textContent: '—' }), el('td', { className: 'num', textContent: fmt(set.reference.ucs.medianTimeMs) })]));
+    card.append(el('div', { className: 'table-wrap' }, el('table', { className: 'data compact' }, [el('thead', {}, el('tr', {}, head.map((t, i) => el('th', { className: i ? 'num' : '', textContent: t })))), el('tbody', {}, rows)])));
+    // the 100 problems, one row each, for the default configuration
+    const details = el('details', {}, el('summary', { textContent: `The ${int(set.meta.count)} problems one by one (default configuration); click a row to open it on the Evolve tab` }));
+    const phead = ['#', 'Initial state', 'Optimum', 'Optimal plan', 'GA cost', 'Ratio', 'GA plan', 'Side gates', 'First goal in generation', 'Generations', 'Evaluations', 'Time (ms)'];
+    details.append(el('div', { className: 'table-wrap' }, el('table', { className: 'data compact' }, [
+      el('thead', {}, el('tr', {}, phead.map((t, i) => el('th', { className: i >= 2 ? 'num' : '', textContent: t })))),
+      el('tbody', {}, set.problems.map((pr, i) => {
+        const r = pr.runs.default;
+        const tr = el('tr', { className: 'pick' }, [
+          el('td', { textContent: i + 1 }), el('td', {}, el('code', { textContent: pr.grid })), el('td', { className: 'num', textContent: pr.optimum }), el('td', { className: 'num', textContent: `${pr.optimalSteps} actions` }),
+          el('td', { className: 'num' }, r.success ? [String(r.cost), ' ', badge(r.cost, pr.optimum)] : el('span', { className: 'badge bad', textContent: 'no goal path' })),
+          el('td', { className: 'num', textContent: r.ratio === null ? '—' : r.ratio.toFixed(3) }), el('td', { className: 'num', textContent: r.success ? `${r.steps} actions` : '—' }), el('td', { className: 'num', textContent: r.success ? r.sides : '—' }),
+          el('td', { className: 'num', textContent: r.firstGoal < 0 ? '—' : r.firstGoal }), el('td', { className: 'num', textContent: r.generations }), el('td', { className: 'num', textContent: int(r.evaluations) }), el('td', { className: 'num', textContent: fmtMs(r.timeMs) }),
+        ]);
+        tr.addEventListener('click', () => { showTab('evolve'); loadGrid(parseGrid(pr.grid)); });
+        return tr;
+      })),
+    ])));
+    card.append(details);
+    body.append(card);
+  }
+}
+
 let evalLoaded = false;
 async function renderEval() {
   if (evalLoaded) return;
   evalLoaded = true;
   const body = $('evalBody');
+  await renderRandom100(body);
   let data;
   try { data = await (await fetch(`${DATA}a3-5x2.json`)).json(); } catch (err) {
-    body.append(el('div', { className: 'card', textContent: `The evaluation dataset (data/a3-5x2.json) is not available: ${err.message}. Run "node scripts/analyze.mjs --only a3-5x2.json" to generate it.` }));
+    body.append(el('div', { className: 'card', textContent: `The exhaustive dataset (data/a3-5x2.json) is not available: ${err.message}. Run "node scripts/analyze.mjs --only a3-5x2.json" to generate it.` }));
     return;
   }
+  body.append(el('h2', { className: 'section-title', textContent: 'Every initial state of the 5×2 grid: the first version of the algorithm' }));
+  body.append(el('p', { className: 'sub', textContent: 'This larger run was made with the first version of this project: the conflict number taken at the end state (not the smallest along the sequence), initial walks of random length, four mutation kinds (replace, insert, delete, regrow) and single-point crossover. It covers all 59,049 initial states and is kept because its comparison of selection methods, fitness forms and conflict functions is broadly consistent with the 100-problem results above; it has not been recomputed (about 45 minutes of all cores).' }));
   const { meta, optimal, algos } = data;
   const by = Object.fromEntries(algos.map((a) => [a.key, a]));
   const ga = by.ga;
@@ -723,17 +822,32 @@ function init() {
   $('pFitness').value = DEFAULTS.fitness;
   for (const [id, c] of Object.entries(CONFLICTS)) $('pConflicts').append(el('option', { value: id, textContent: c.name }));
   $('pConflicts').value = DEFAULTS.conflicts;
+  for (const [id, m] of Object.entries(CONFLICT_MODES)) $('pConflictMode').append(el('option', { value: id, textContent: m.name }));
+  $('pConflictMode').value = DEFAULTS.conflictMode;
+  for (const sel of ['pConflictTransform', 'pCostTransform']) for (const [id, t] of Object.entries(TRANSFORMS)) $(sel).append(el('option', { value: id, textContent: t.name }));
+  $('pConflictTransform').value = DEFAULTS.conflictTransform;
+  $('pCostTransform').value = DEFAULTS.costTransform;
+  for (const [id, c] of Object.entries(CROSSOVERS)) $('pCrossoverType').append(el('option', { value: id, textContent: c.name }));
+  $('pCrossoverType').value = DEFAULTS.crossover;
+  for (const [id, c] of Object.entries(ILLEGAL)) $('pIllegal').append(el('option', { value: id, textContent: c.name }));
+  $('pIllegal').value = DEFAULTS.illegal;
+  for (const [id, mu] of Object.entries(MUTATIONS)) {
+    const box = el('input', { type: 'checkbox', value: id, checked: true });
+    $('pMutations').append(el('label', { title: mu.note }, [box, `${mu.name}${mu.brief ? '' : ' *'}`]));
+  }
   const hints = () => {
     $('selectionHint').textContent = SELECTION[$('pSelection').value].formula;
     $('fitnessHint').textContent = FITNESS[$('pFitness').value].note;
     $('conflictsHint').textContent = CONFLICTS[$('pConflicts').value].note;
+    $('illegalHint').textContent = ILLEGAL[$('pIllegal').value].note;
   };
   hints();
   $('pSelection').addEventListener('change', hints);
   $('pFitness').addEventListener('change', hints);
   $('pConflicts').addEventListener('change', () => { $('pWeight').value = CONFLICTS[$('pConflicts').value].weight; hints(); });
   $('params').addEventListener('change', () => { operatorsDirty = true; });
-  for (const id of ['pSelection', 'pFitness', 'pConflicts', 'pWeight', 'pRepair']) $(id).addEventListener('change', () => { operatorsDirty = true; });
+  $('pIllegal').addEventListener('change', hints);
+  for (const id of ['pSelection', 'pFitness', 'pConflicts', 'pWeight', 'pCostWeight', 'pConflictTransform', 'pCostTransform', 'pConflictMode', 'pIllegal', 'pCrossoverType', 'pMutations']) $(id).addEventListener('change', () => { operatorsDirty = true; });
   $('preset').append(el('option', { value: '', textContent: 'Choose an example…' }));
   PRESETS.forEach((p, i) => $('preset').append(el('option', { value: i, textContent: p.name })));
   $('preset').addEventListener('change', () => { const p = PRESETS[$('preset').value]; if (p) loadGrid(parseGrid(p.grid)); $('preset').value = ''; });

@@ -8,14 +8,16 @@
 //   node scripts/evolve.mjs "1 0 / 0 1 / 0 1 / 1 0" --compare        the GA against A*, the greedy approach and its own variants
 //
 // Parameters (defaults in js/core/genetic.js): --population --generations --max-length --elite
-// --crossover --mutation --stagnation --seed --selection roulette|windowed|rank|tournament
-// --fitness graded|strict|ratio --conflicts gates|sand|fall|sweep|h2|learned|zero --weight
-// --no-repair --every N (log every N generations) --quiet
+// --crossover-rate --mutation-rate --stagnation --seed --selection roulette|windowed|rank|tournament
+// --fitness graded|strict|ratio --conflicts gates|boxes|sand|fall|sweep|h2|learned|zero --weight W1
+// --conflict-mode min|end --cost-weight W2 --f linear|sqrt|log --g linear|sqrt|log
+// --illegal repair|retry|zero --crossover single|double --mutations all|brief|point,swap,...
+// --every N (log every N generations) --quiet --verbose
 
 import { Sandbox, parseGrid, formatGrid, formatState, seededRng, PROBS_SAND, PROFESSOR_EXAMPLE } from '../js/core/model.js';
 import { search } from '../js/core/search.js';
 import { makeProblem, describePath } from '../js/core/problem.js';
-import { DEFAULTS, CONFLICTS, FITNESS, SELECTION } from '../js/core/genetic.js';
+import { DEFAULTS, CONFLICTS, FITNESS, SELECTION, normalizeParams, CONFLICT_MODES, ILLEGAL, CROSSOVERS, MUTATIONS } from '../js/core/genetic.js';
 import { A3_VARIANTS } from '../js/core/analysis.js';
 
 const argv = process.argv.slice(2);
@@ -39,24 +41,27 @@ const model = new Sandbox({ rows: cells.length / 2 });
 const base = makeProblem(model, model.initial(cells), 'gap');
 
 const num = (k, d) => (opt[k] !== undefined ? Number(opt[k]) : d);
-const ga = {
+const ga = normalizeParams({
   population: num('population', DEFAULTS.population),
   generations: num('generations', DEFAULTS.generations),
-  maxLength: num('max-length', DEFAULTS.maxLength),
+  maxLength: opt['max-length'] !== undefined ? Number(opt['max-length']) : null,
   elite: num('elite', DEFAULTS.elite),
-  crossoverRate: num('crossover', DEFAULTS.crossoverRate),
-  mutationRate: num('mutation', DEFAULTS.mutationRate),
+  crossoverRate: num('crossover-rate', DEFAULTS.crossoverRate),
+  mutationRate: num('mutation-rate', DEFAULTS.mutationRate),
   stagnation: num('stagnation', DEFAULTS.stagnation),
   seed: num('seed', DEFAULTS.seed),
   selection: opt.selection || DEFAULTS.selection,
   fitness: opt.fitness || DEFAULTS.fitness,
   conflicts: opt.conflicts || DEFAULTS.conflicts,
   conflictWeight: opt.weight !== undefined ? Number(opt.weight) : null,
-  repair: !opt['no-repair'],
-};
-for (const [k, table] of [['selection', SELECTION], ['fitness', FITNESS], ['conflicts', CONFLICTS]]) {
-  if (!table[ga[k]]) throw new Error(`unknown ${k} "${ga[k]}" (one of ${Object.keys(table).join(', ')})`);
-}
+  conflictMode: opt['conflict-mode'] || DEFAULTS.conflictMode,
+  costWeight: num('cost-weight', DEFAULTS.costWeight),
+  conflictTransform: opt.f || DEFAULTS.conflictTransform,
+  costTransform: opt.g || DEFAULTS.costTransform,
+  illegal: opt.illegal || DEFAULTS.illegal,
+  crossover: opt.crossover || DEFAULTS.crossover,
+  mutations: opt.mutations ? (['all', 'brief'].includes(opt.mutations) ? opt.mutations : String(opt.mutations).split(',')) : DEFAULTS.mutations,
+});
 
 console.log(`Start (${model.rows}×2):\n${formatGrid(cells)}\n`);
 const optimum = search('astar', base.using('gap'));
@@ -66,6 +71,7 @@ if (opt.compare) {
   base.warm();
   // the variants keep their own selection, fitness, conflict function and weight; only the sizes and budgets are shared
   const shared = { population: ga.population, generations: ga.generations, maxLength: ga.maxLength, elite: ga.elite, crossoverRate: ga.crossoverRate, mutationRate: ga.mutationRate, stagnation: ga.stagnation, seed: ga.seed };
+  // (each variant keeps its own selection, fitness, conflict function, illegal handling, crossover and mutations)
   const rows = A3_VARIANTS.map((v) => {
     const r = search(v.algo, base.using(v.h || 'zero'), { ga: v.ga ? { ...shared, ...v.ga } : undefined });
     const d = describePath(model, r.path);
@@ -81,7 +87,7 @@ if (opt.compare) {
 const every = num('every', 10);
 const pad = (v, n) => String(v).padStart(n);
 if (!opt.quiet) {
-  console.log(`${SELECTION[ga.selection].name}; fitness = ${FITNESS[ga.fitness].name}; conflict_numbers = ${CONFLICTS[ga.conflicts].name.toLowerCase()} × ${ga.conflictWeight ?? CONFLICTS[ga.conflicts].weight}; population ${ga.population}, up to ${ga.generations} generations, length ≤ ${ga.maxLength}, repair ${ga.repair ? 'on' : 'off'}.\n`);
+  console.log(`${SELECTION[ga.selection].name}; fitness = ${FITNESS[ga.fitness].name} with w₁ = ${ga.conflictWeight ?? CONFLICTS[ga.conflicts].weight}, w₂ = ${ga.costWeight}; conflict_numbers = ${CONFLICTS[ga.conflicts].name.toLowerCase()}, ${CONFLICT_MODES[ga.conflictMode].name}; ${CROSSOVERS[ga.crossover].name.toLowerCase()} crossover; mutations: ${ga.mutations.map((k) => MUTATIONS[k].name.toLowerCase()).join(', ')}; illegal sequences: ${ILLEGAL[ga.illegal].name.toLowerCase()}; population ${ga.population}, up to ${ga.generations} generations, length ≤ ${ga.maxLength ?? `${4 * model.rows} (4 per row)`}.\n`);
   console.log(`${pad('gen', 5)} ${pad('best f', 8)} ${pad('mean f', 8)} ${pad('worst f', 8)} ${pad('at goal', 8)} ${pad('distinct', 8)} ${pad('best cost', 10)}  best sequence`);
 }
 const r = search('ga', base, {
@@ -109,4 +115,5 @@ if (!r.found) {
   console.log(`\nBest solution: cost ${r.cost} in ${d.steps} actions (${d.sides} side gates) — ${r.cost === optimum.cost ? 'optimal' : `${(((r.cost - optimum.cost) / optimum.cost) * 100).toFixed(0)}% above the optimum ${optimum.cost}`}.`);
   console.log(`First goal path in generation ${r.ga.firstGoalGeneration}, best fitness reached in generation ${r.ga.bestGeneration}, stopped after ${r.ga.generations} generations.`);
 }
-console.log(`large_number ${r.ga.largeNumber}; ${r.expanded} fitness evaluations, ${r.generated} actions applied, ${r.timeMs.toFixed(1)} ms.`);
+console.log(`large_number ${r.ga.largeNumber}, length bound ${r.ga.maxLength}; ${r.expanded} fitness evaluations, ${r.generated} actions applied${r.ga.retries ? `, ${r.ga.retries} operators retried` : ''}, ${r.timeMs.toFixed(1)} ms.`);
+if (!r.found) console.log(`Fittest sequence: ${r.ga.best.genes.map((a) => model.actions[a].short).join(' ')} — path cost ${r.ga.best.cost}, conflict number ${r.ga.best.conflicts}, fitness ${r.ga.best.fitness.toFixed(1)}.`);

@@ -288,9 +288,19 @@ test('genetic algorithm: fitness is 0 on an illegal action and large_number − 
   assert.equal(fitness(problem, env, sideGatePlan), problem.largeNumber - 45);
   assert.equal(fitness(problem, env, sideGatePlan, 'strict'), problem.largeNumber - 45);
   assert.equal(successfulPath(problem, env, plan('S2 S3')), false);
-  // the partial path: 2 side gates (cost 2) leave 1 ½ ½ 1 on the left and 0 ½ ½ 0 on the right,
-  // so 4 + 3 = 7 closed gates with sand above them → 9 · 7
+  // the partial path S2 S3 (cost 2): 1 0 / 0 1 / 0 1 / 1 0 has 7 closed gates with sand above them
+  // (four on the left, three on the right) and the two side gates leave that count at 7 → 9 · 7
   assert.equal(fitness(problem, env, plan('S2 S3')), problem.largeNumber - 9 * 7 - 2);
+  // the conflict number of a sequence is the smallest value among the states after each action:
+  // from 1 0 / 0 0 / 0 0 / 0 0, L1 drops the sand one row (gates 4 → 3), then S2 spreads it over both
+  // columns (3 → 6): the smallest post-action value is 3, the end state gives 6, and the start state
+  // (4) does not count
+  const spread = makeProblem(m, parseGrid('1 0/0 0/0 0/0 0'), 'gap');
+  const spreadEnv = new Environment(spread);
+  assert.equal(fitness(new Problem(spread, { maxLength: 20 }), spreadEnv, plan('L1 S2')), problem.largeNumber - 9 * 3 - 5 - 1);
+  assert.equal(fitness(new Problem(spread, { maxLength: 20, conflictMode: 'end' }), spreadEnv, plan('L1 S2')), problem.largeNumber - 9 * 6 - 5 - 1);
+  // an empty sequence is scored by the start state (4 gates)
+  assert.equal(fitness(new Problem(spread, { maxLength: 20 }), spreadEnv, []), problem.largeNumber - 9 * 4);
   assert.equal(fitness(problem, env, plan('S2 S3'), 'strict'), 0);
   // an illegal action (the left gate under row 2: that box is empty) → 0 in every form
   for (const form of ['graded', 'strict', 'ratio']) assert.equal(fitness(problem, env, plan('L2 L1'), form), 0);
@@ -338,27 +348,43 @@ test('genetic algorithm: selection probabilities sum to 1, the list is sorted, r
 });
 
 test('genetic algorithm: crossover and mutation keep individuals legal and within the length bound', async () => {
-  const { Problem, Environment, SolverAgent } = await import('../js/core/genetic.js');
+  const { Problem, Environment, SolverAgent, MUTATIONS } = await import('../js/core/genetic.js');
   const m = new Sandbox({ rows: 5 });
   const view = makeProblem(m, parseGrid('1 1/1 1/1 1/0 0/0 0'), 'gap');
   const problem = new Problem(view, { maxLength: 12 });
   const env = new Environment(view);
-  const agent = new SolverAgent(problem, env, { seed: 11 });
-  const pop = Array.from({ length: 30 }, () => agent.randomIndividual());
-  for (const x of pop) { assert.ok(x.legal); assert.ok(x.genes.length <= 12); assert.ok(x.fitness > 0); }
-  for (let i = 0; i < 200; i++) {
-    const a = pop[i % 30];
-    const b = pop[(i * 7) % 30];
-    for (const child of agent.crossover(a, b)) {
-      assert.ok(child.legal && child.genes.length <= 12);
-      assert.equal(env.replay(problem, child.genes).legal, true);
+  for (const [illegal, crossover] of [['repair', 'single'], ['repair', 'double'], ['retry', 'single'], ['retry', 'double']]) {
+    const agent = new SolverAgent(problem, env, { seed: 11, illegal, crossover });
+    const pop = Array.from({ length: 30 }, () => agent.randomIndividual());
+    // step 6.1: fixed-length random sequences, cut at the goal, legal by construction
+    for (const x of pop) { assert.ok(x.legal); assert.ok(x.genes.length <= 12); assert.ok(x.genes.length === 12 || x.goal); assert.ok(x.fitness > 0); }
+    for (let i = 0; i < 200; i++) {
+      const a = pop[i % 30];
+      const b = pop[(i * 7) % 30];
+      for (const child of agent.crossover(a, b)) {
+        assert.ok(child.legal && child.genes.length <= 12, `${illegal} ${crossover}`);
+        assert.equal(env.replay(problem, child.genes).legal, true);
+      }
+      for (const kind of Object.keys(MUTATIONS)) {
+        const mutant = agent.mutate(a, kind);
+        assert.ok(mutant.legal && mutant.genes.length <= 12, `${illegal} ${kind}`);
+        assert.equal(env.replay(problem, mutant.genes).cost, mutant.cost);
+      }
     }
-    const mutant = agent.mutate(a);
-    assert.ok(mutant.legal && mutant.genes.length <= 12);
-    assert.equal(env.replay(problem, mutant.genes).cost, mutant.cost);
+    // the fitness of an individual is what the standalone function says
+    for (const x of pop.slice(0, 5)) assert.equal(agent.fitness(x.genes), x.fitness);
   }
-  // the fitness of an individual is what the standalone function says
-  for (const x of pop.slice(0, 5)) assert.equal(agent.fitness(x.genes), x.fitness);
+  // swap and reverse change the order only; without repair the multiset of actions is preserved
+  const agent = new SolverAgent(problem, env, { seed: 2, illegal: 'zero' });
+  const parent = agent.build([5, 6, 7, 8, 9, 10, 11], false);
+  const sorted = (g) => [...g].sort((x, y) => x - y).join(',');
+  assert.equal(sorted(agent.mutate(parent, 'swap').genes), sorted(parent.genes));
+  assert.equal(sorted(agent.mutate(parent, 'reverse').genes), sorted(parent.genes));
+  // the lethal-mutation mode never returns an illegal child: it retries, then keeps the parent
+  const lethal = new SolverAgent(problem, env, { seed: 5, illegal: 'retry' });
+  const legalParent = lethal.randomIndividual();
+  for (let i = 0; i < 50; i++) assert.ok(lethal.mutate(legalParent).legal);
+  assert.ok(lethal.retries > 0, 'some operators were redrawn');
 });
 
 test('genetic algorithm: solves the assignment example, is reproducible per seed, and reports like the other algorithms', () => {
@@ -377,7 +403,14 @@ test('genetic algorithm: solves the assignment example, is reproducible per seed
   // the admissible h₂ used unweighted rewards stopping short: the fittest individual is not a goal path
   const bad = search('ga', p, { ga: { seed: 1, conflicts: 'h2' } });
   assert.equal(bad.ga.best.goal, false);
-  // without repair nothing is legal for long
-  const naive = search('ga', p, { ga: { seed: 1, repair: false } });
+  // without repair nothing is legal for long (the first version's flag and the new name agree)
+  const naive = search('ga', p, { ga: { seed: 1, illegal: 'zero' } });
   assert.equal(naive.found, false);
+  assert.deepEqual(search('ga', p, { ga: { seed: 1, repair: false } }).ga.params, naive.ga.params);
+  // the length bound defaults to 4 actions per row and large_number follows from it
+  assert.equal(r1.ga.maxLength, 16);
+  assert.equal(r1.ga.largeNumber, 2 * 16 * 9 + 1);
+  // the brief's conflict count (boxes with sand) and the general form with transforms also run
+  const alt = search('ga', p, { ga: { seed: 1, conflicts: 'boxes', conflictTransform: 'sqrt', costTransform: 'log', costWeight: 2, mutations: 'brief', crossover: 'double' } });
+  assert.ok(alt.found && alt.cost >= 38);
 });
